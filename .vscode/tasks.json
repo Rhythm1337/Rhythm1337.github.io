@@ -6,7 +6,8 @@
         {
             "label": "Serve Drafts",
             "type": "shell",
-            "command": "hugo server -D",
+            "command": "powershell",
+            "args": ["-Command", "& \"$env:APPDATA\\hugo\\hugo.exe\" server -D --port 1414"],
             "group": {
                 "kind": "test",
                 "isDefault": true
@@ -17,7 +18,8 @@
         {
             "label": "Build",
             "type": "shell",
-            "command": "hugo",
+            "command": "powershell",
+            "args": ["-Command", "& \"$env:APPDATA\\hugo\\hugo.exe\""],
             "group": {
                 "kind": "build",
                 "isDefault": true
