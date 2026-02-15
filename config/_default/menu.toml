@@ -22,3 +22,11 @@ url = "https://linkedin.com/in/rhythmchaudhary"
 
 [social.params]
 icon = "brand-linkedin"
+
+[[social]]
+identifier = "youtube"
+name = "YouTube"
+url = "https://www.youtube.com/@rhy7hm"
+
+[social.params]
+icon = "brand-youtube"
