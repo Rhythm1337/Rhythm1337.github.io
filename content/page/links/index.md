@@ -13,11 +13,11 @@ links:
     description: My Red Hat certified credentials and certifications
     website: https://rhtapps.redhat.com/verify?certId=230-037-392
     image: /img/Red_Hat_logo.png
-# menu:
-#     main: 
-#         weight: 4
-#         params:
-#             icon: link
+menu:
+  main:
+    weight: 4
+    params:
+      icon: link
 
 comments: false
 ---

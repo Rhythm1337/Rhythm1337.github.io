@@ -2,14 +2,13 @@
 REM Hugo development server shortcut
 setlocal enabledelayedexpansion
 
-set "GO_BIN=%APPDATA%\go\bin"
 set "HUGO_BIN=%APPDATA%\hugo"
 
-set "PATH=!GO_BIN!;!HUGO_BIN!;!PATH!"
+set "PATH=!HUGO_BIN!;!PATH!"
 
 REM Navigate to script directory (works from anywhere)
 cd /d "%~dp0"
 
-hugo.exe server -D
+hugo.exe server -D --port 1414
 
 pause
