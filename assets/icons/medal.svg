@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-medal" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+  <path d="M12 4v7m-4 -7v5m8 -5v5h-4"></path>
+  <circle cx="8" cy="15" r="4"></circle>
+  <circle cx="16" cy="15" r="4"></circle>
+  <path d="M12 11l1.657 5.351a1 1 0 0 0 .951 .649h0a1 1 0 0 0 .951 -.649l1.657 -5.351"></path>
+</svg>
