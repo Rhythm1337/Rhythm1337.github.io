@@ -14,5 +14,7 @@ hasCJKLanguage = false
 # Change it to your Disqus shortname before using
 disqusShortname = "rhythm1337"
 
+enableRobotsTXT = true
+
 [pagination]
 pagerSize = 5
