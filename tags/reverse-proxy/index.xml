@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Reverse Proxy on Rhythm Chaudhary</title><link>https://rhythm1337.github.io/tags/reverse-proxy/</link><description>Recent content in Reverse Proxy on Rhythm Chaudhary</description><generator>Hugo -- gohugo.io</generator><language>en-us</language><lastBuildDate>Sun, 15 Feb 2026 00:00:00 +0000</lastBuildDate><atom:link href="https://rhythm1337.github.io/tags/reverse-proxy/index.xml" rel="self" type="application/rss+xml"/><item><title>Automating an NGINX Reverse Proxy with Ansible</title><link>https://rhythm1337.github.io/p/automating-an-nginx-reverse-proxy-with-ansible/</link><pubDate>Sun, 15 Feb 2026 00:00:00 +0000</pubDate><guid>https://rhythm1337.github.io/p/automating-an-nginx-reverse-proxy-with-ansible/</guid><description>&lt;img src="https://rhythm1337.github.io/p/automating-an-nginx-reverse-proxy-with-ansible/automate-nginx-reverse-proxy.png" alt="Featured image of post Automating an NGINX Reverse Proxy with Ansible" /&gt;&lt;p&gt;This writeup documents my Ansible-based reverse proxy automation and the demo video where the playbook runs end-to-end.&lt;/p&gt;
+&lt;h2 id="resources"&gt;Resources
+&lt;/h2&gt;&lt;ul&gt;
+&lt;li&gt;Code: &lt;a class="link" href="https://github.com/Rhythm1337/ansible-dynamic-proxy" target="_blank" rel="noopener"
+&gt;https://github.com/Rhythm1337/ansible-dynamic-proxy&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Demo video: &lt;a class="link" href="https://www.youtube.com/watch?v=FrCaie-2YKk" target="_blank" rel="noopener"
+&gt;https://www.youtube.com/watch?v=FrCaie-2YKk&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Handwritten notes (PDF): &lt;a class="link" href="https://github.com/Rhythm1337/ansible-dynamic-proxy/blob/master/Handwritten.pdf" target="_blank" rel="noopener"
+&gt;https://github.com/Rhythm1337/ansible-dynamic-proxy/blob/master/Handwritten.pdf&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id="the-problem"&gt;The Problem
+&lt;/h2&gt;&lt;p&gt;The goal was to obfuscate a public-facing business server located on-premise. This server runs multiple different applications and generates both inbound and outbound traffic. To date, approximately 20 TB of bandwidth has been transferred.&lt;/p&gt;
+&lt;h2 id="the-solution-reverse-proxies"&gt;The Solution: Reverse Proxies
+&lt;/h2&gt;&lt;p&gt;NGINX was chosen as the solution because it offers built-in load balancing, performance optimization, and flexibility.&lt;/p&gt;
+&lt;h2 id="the-technical-setup-and-thought-process"&gt;The Technical Setup and Thought Process
+&lt;/h2&gt;&lt;p&gt;The infrastructure is split between a public Cloud Proxy and an isolated Home Server.&lt;/p&gt;
+&lt;p&gt;&lt;img src="https://rhythm1337.github.io/p/automating-an-nginx-reverse-proxy-with-ansible/handwritten-note.jpg"
+width="1240"
+height="1755"
+srcset="https://rhythm1337.github.io/p/automating-an-nginx-reverse-proxy-with-ansible/handwritten-note_hu_1b895fa8dec610dc.jpg 480w, https://rhythm1337.github.io/p/automating-an-nginx-reverse-proxy-with-ansible/handwritten-note_hu_63c299238448a970.jpg 1024w"
+loading="lazy"
+alt="Home Server diagram"
+class="gallery-image"
+data-flex-grow="70"
+data-flex-basis="169px"
+&gt;&lt;/p&gt;
+&lt;h3 id="cloud-proxy-public"&gt;Cloud Proxy (Public)
+&lt;/h3&gt;&lt;ul&gt;
+&lt;li&gt;Handles public access via the domain and cloud IP.&lt;/li&gt;
+&lt;li&gt;Runs NGINX.&lt;/li&gt;
+&lt;li&gt;Traffic is directed from port 2222 to the Home Server IP on port 44690.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id="home-server-isolated"&gt;Home Server (Isolated)
+&lt;/h3&gt;&lt;ul&gt;
+&lt;li&gt;Router: Port 44690 is open.&lt;/li&gt;
+&lt;li&gt;Firewall: Blocks all connections except for the Cloud Proxy.&lt;/li&gt;
+&lt;li&gt;NGINX: Proxy Protocol is enabled. It listens on port 44690 and passes traffic to the internal DHCP IP 192.168.0.1:2222.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Note on container security: Traffic is not sent directly to the applications because they run in Docker containers. Applying firewall rules directly to these containers would cause them to break. Using the same ports on both the Business Proxy and Home Server is an intentional choice for obfuscation.&lt;/p&gt;
+&lt;h2 id="addressing-dynamic-ips-with-ansible"&gt;Addressing Dynamic IPs with Ansible
+&lt;/h2&gt;&lt;p&gt;Because the machine is hosted on-premise at a business location for security reasons, a static IP was not possible. The IP address changed frequently, creating a connection issue. The solution was Ansible, an open-source automation tool used to automate various IT processes.&lt;/p&gt;
+&lt;h2 id="the-automation-approach"&gt;The Automation Approach
+&lt;/h2&gt;&lt;ul&gt;
+&lt;li&gt;Environment setup: Configure SSH keys and develop the Ansible playbook.&lt;/li&gt;
+&lt;li&gt;On-premise execution:
+&lt;ul&gt;
+&lt;li&gt;Gather facts from the on-premise machine.&lt;/li&gt;
+&lt;li&gt;Retrieve the current IP address and save it as a fact.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;Cloud Proxy execution:
+&lt;ul&gt;
+&lt;li&gt;Gather facts from the Cloud Proxy.&lt;/li&gt;
+&lt;li&gt;Ensure all necessary packages exist.&lt;/li&gt;
+&lt;li&gt;Retrieve the saved IP of the on-premise machine.&lt;/li&gt;
+&lt;li&gt;Update all configuration files with the new IP.&lt;/li&gt;
+&lt;li&gt;Reload NGINX to apply changes.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Key detail: The playbook is designed so that if the proxy machine is ever changed, no extra setup is required beyond configuring the SSH keys.&lt;/p&gt;
+&lt;h2 id="closing-note"&gt;Closing Note
+&lt;/h2&gt;&lt;p&gt;&amp;ldquo;If you have read this far, thank you from the bottom of my heart for sticking with me. I truly appreciate you being here.&amp;rdquo;&lt;/p&gt;</description></item></channel></rss>
