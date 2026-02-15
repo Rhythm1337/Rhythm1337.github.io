@@ -1,10 +1,9 @@
 ---
-title: Example Category
-description: A description of this category
+title: Learning
+description: Tutorials, concepts, and study notes
 image:
 
-# Badge style
 style:
-    background: "#2a9d8f"
+    background: "#3b82f6"
     color: "#fff"
 ---
