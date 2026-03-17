@@ -16,6 +16,10 @@ tags:
 image: thumbnail.png
 ---
 
+- Showcase video: https://www.youtube.com/watch?v=FrCaie-2YKk
+
+## Introductions
+
 I wanted to set up a simple self-hosted photo backup server with Immich on RHEL.
 
 Most Immich guides are written for setups that do not have to deal with RHEL-specific SELinux behavior. The installation itself is not too bad, but getting the permissions right can be frustrating if you have never done it before.
