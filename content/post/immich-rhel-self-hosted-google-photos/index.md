@@ -26,7 +26,7 @@ Most Immich guides are written for setups that do not have to deal with RHEL-spe
 
 This post walks through how to run Immich on RHEL with rootless Podman and Tailscale, with the extra steps needed to make it work cleanly.
 
-## Step 1: Download the Immich Files
+## Step 1: Download the Immich Files (default setup)
 
 First, create the working directory and pull down the official Immich deployment files.
 
@@ -61,7 +61,7 @@ logout
 sudo dnf install podman-compose
 ```
 
-Tip: If the CRB repository fights you, you can always bypass it by installing `pip` and installing `podman-compose` through Python instead.
+Tip: If the CRB repository does not work, you can always bypass it by installing `pip` and installing `podman-compose` through Python instead.
 
 ```bash
 sudo dnf install python3-pip
@@ -70,7 +70,7 @@ pip3 install --user podman-compose
 
 ## Step 3: Edit SELinux Contexts
 
-Next, edit the `docker-compose.yml` file. Because RHEL uses SELinux, it aggressively blocks containers from touching host files. We have to explicitly add permissions to the volume mounts inside the file.
+Next, edit the `docker-compose.yml` file. Because RHEL uses SELinux, it blocks containers from touching host files. We have to explicitly add permissions to the volume mounts inside the file.
 
 ```bash
 vim docker-compose.yml
@@ -111,7 +111,7 @@ podman-compose up -d
 
 ## Step 6: Secure Remote Access with Tailscale
 
-The server is running, but how do you access it securely without exposing ports to the open internet? Tailscale makes this effortless.
+The server is running, but how do you access it securely without exposing ports to the internet? Tailscale makes this effortless.
 
 Install Tailscale using their official script:
 
@@ -127,7 +127,7 @@ sudo tailscale up
 
 Copy the authentication link provided in the terminal, paste it into your browser, and authenticate. That's it. Anything connected to your Tailscale mesh network can now access your new Immich instance securely.
 
-## Convert Containers Into a Service with Quadlet
+# Convert Containers Into a Service with Quadlet
 
 If you want to convert your containers into a proper user service, follow these steps. With the following steps, you can have immich auto start if the system restarts and so on.
 
@@ -199,6 +199,7 @@ Check logs with:
 
 ```bash
 journalctl --user -xeu immich.service
+systemctl --user status immich.service
 ```
 
 If you see `database system is ready`, the service is up.
