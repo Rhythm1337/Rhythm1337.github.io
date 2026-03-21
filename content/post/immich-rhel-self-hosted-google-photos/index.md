@@ -18,7 +18,7 @@ image: thumbnail.png
 
 - Showcase video: https://www.youtube.com/watch?v=FrCaie-2YKk
 
-## Introductions
+**Introductions**
 
 I wanted to set up a simple self-hosted photo backup server with Immich on RHEL.
 
@@ -127,7 +127,7 @@ sudo tailscale up
 
 Copy the authentication link provided in the terminal, paste it into your browser, and authenticate. That's it. Anything connected to your Tailscale mesh network can now access your new Immich instance securely.
 
-# Convert Containers Into a Service with Quadlet
+**Convert Containers Into a Service with Quadlet**
 
 If you want to convert your containers into a proper user service, follow these steps. With the following steps, you can have immich auto start if the system restarts and so on.
 
