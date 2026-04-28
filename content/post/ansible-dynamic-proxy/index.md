@@ -70,4 +70,5 @@ Key detail: The playbook is designed so that if the proxy machine is ever change
 
 ## Closing Note
 
-"If you have read this far, thank you from the bottom of my heart for sticking with me. I truly appreciate you being here."
+"If you have read this far, thank you from the bottom of my heart for sticking with me. I truly appreciate you being here. :)"
+
