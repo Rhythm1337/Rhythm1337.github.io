@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Projects on Rhythm Chaudhary</title><link>https://rhythm1337.github.io/categories/projects/</link><description>Recent content in Projects on Rhythm Chaudhary</description><generator>Hugo -- gohugo.io</generator><language>en-us</language><lastBuildDate>Tue, 17 Mar 2026 00:00:00 +0000</lastBuildDate><atom:link href="https://rhythm1337.github.io/categories/projects/index.xml" rel="self" type="application/rss+xml"/><item><title>Self-Hosting Google Photos with Immich on RHEL and Podman</title><link>https://rhythm1337.github.io/p/self-hosting-google-photos-with-immich-on-rhel-and-podman/</link><pubDate>Tue, 17 Mar 2026 00:00:00 +0000</pubDate><guid>https://rhythm1337.github.io/p/self-hosting-google-photos-with-immich-on-rhel-and-podman/</guid><description>&lt;img src="https://rhythm1337.github.io/p/self-hosting-google-photos-with-immich-on-rhel-and-podman/thumbnail.png" alt="Featured image of post Self-Hosting Google Photos with Immich on RHEL and Podman" /&gt;&lt;ul&gt;
+&lt;li&gt;Showcase video: &lt;a class="link" href="https://www.youtube.com/watch?v=FrCaie-2YKk" target="_blank" rel="noopener"
+&gt;https://www.youtube.com/watch?v=FrCaie-2YKk&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;Introductions&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;I wanted to set up a simple self-hosted photo backup server with Immich on RHEL.&lt;/p&gt;
+&lt;p&gt;Most Immich guides are written for setups that do not have to deal with RHEL-specific SELinux behavior. The installation itself is not too bad, but getting the permissions right can be frustrating if you have never done it before.&lt;/p&gt;
+&lt;p&gt;This post walks through how to run Immich on RHEL with rootless Podman and Tailscale, with the extra steps needed to make it work cleanly.&lt;/p&gt;
+&lt;h2 id="step-1-download-the-immich-files-default-setup"&gt;Step 1: Download the Immich Files (default setup)
+&lt;/h2&gt;&lt;p&gt;First, create the working directory and pull down the official Immich deployment files.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt; 1
+&lt;/span&gt;&lt;span class="lnt"&gt; 2
+&lt;/span&gt;&lt;span class="lnt"&gt; 3
+&lt;/span&gt;&lt;span class="lnt"&gt; 4
+&lt;/span&gt;&lt;span class="lnt"&gt; 5
+&lt;/span&gt;&lt;span class="lnt"&gt; 6
+&lt;/span&gt;&lt;span class="lnt"&gt; 7
+&lt;/span&gt;&lt;span class="lnt"&gt; 8
+&lt;/span&gt;&lt;span class="lnt"&gt; 9
+&lt;/span&gt;&lt;span class="lnt"&gt;10
+&lt;/span&gt;&lt;span class="lnt"&gt;11
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Create the directory for Immich&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;mkdir ./immich-app
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Navigate into the directory&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;cd&lt;/span&gt; ./immich-app
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Download the docker-compose.yml file&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;wget -O docker-compose.yml https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Download the example .env file&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;wget -O .env https://github.com/immich-app/immich/releases/latest/download/example.env
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="step-2-install-podman-compose"&gt;Step 2: Install podman-compose
+&lt;/h2&gt;&lt;p&gt;Now we need a way to run this compose file. RHEL keeps its official repositories incredbly strict for enterprise stability. To get community-standard tools like &lt;code&gt;podman-compose&lt;/code&gt;, we have to switch to root, enable CodeReady Builder (CRB), and get into Fedora&amp;rsquo;s Extra Packages for Enterprise Linux (EPEL).&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt; 1
+&lt;/span&gt;&lt;span class="lnt"&gt; 2
+&lt;/span&gt;&lt;span class="lnt"&gt; 3
+&lt;/span&gt;&lt;span class="lnt"&gt; 4
+&lt;/span&gt;&lt;span class="lnt"&gt; 5
+&lt;/span&gt;&lt;span class="lnt"&gt; 6
+&lt;/span&gt;&lt;span class="lnt"&gt; 7
+&lt;/span&gt;&lt;span class="lnt"&gt; 8
+&lt;/span&gt;&lt;span class="lnt"&gt; 9
+&lt;/span&gt;&lt;span class="lnt"&gt;10
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Switch to root&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;su -
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Enable CRB and install EPEL&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;subscription-manager repos --enable codeready-builder-for-rhel-10-&lt;span class="k"&gt;$(&lt;/span&gt;arch&lt;span class="k"&gt;)&lt;/span&gt;-rpms
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;logout&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Install podman-compose&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo dnf install podman-compose
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Tip: If the CRB repository does not work, you can always bypass it by installing &lt;code&gt;pip&lt;/code&gt; and installing &lt;code&gt;podman-compose&lt;/code&gt; through Python instead.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo dnf install python3-pip
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;pip3 install --user podman-compose
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="step-3-edit-selinux-contexts"&gt;Step 3: Edit SELinux Contexts
+&lt;/h2&gt;&lt;p&gt;Next, edit the &lt;code&gt;docker-compose.yml&lt;/code&gt; file. Because RHEL uses SELinux, it blocks containers from touching host files. We have to explicitly add permissions to the volume mounts inside the file.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;vim docker-compose.yml
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;span class="lnt"&gt;8
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;19&lt;/span&gt; volumes:
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;20&lt;/span&gt; &lt;span class="c1"&gt;# Do not edit the next line. If you want to change the media storage location on your system, edit the value of UPLOAD_LOCATION in th e .env file&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;21&lt;/span&gt; - &lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;UPLOAD_LOCATION&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;:/data:z
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;22&lt;/span&gt; - /etc/localtime:/etc/localtime:ro
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;67&lt;/span&gt; volumes:
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;68&lt;/span&gt; &lt;span class="c1"&gt;# Do not edit the next line. If you want to change the database storage location on your system, edit the value of DB_DATA_LOCATION i n the .env file&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;69&lt;/span&gt; - &lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;DB_DATA_LOCATION&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;:/var/lib/postgresql/data:z
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;When you are defining your volume paths in the compose file, append the correct SELinux labels:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Add a lowercase &lt;code&gt;:z&lt;/code&gt; to your photo uploads and database volume folder so multiple Immich containers can share that directory without locking each other out.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id="step-4-fix-postgresql-permissions-for-rootless-podman"&gt;Step 4: Fix PostgreSQL Permissions for Rootless Podman
+&lt;/h2&gt;&lt;p&gt;Before starting the server, there is one major catch with rootless Podman. Because we are running this securely as a normal user instead of &lt;code&gt;root&lt;/code&gt;, the host machine doesn&amp;rsquo;t recognize the container&amp;rsquo;s internal PostgreSQL user. We have to translate those permissions.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman unshare chown -R 999:999 ./postgres/
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;The &lt;code&gt;podman unshare&lt;/code&gt; command drops us into the container&amp;rsquo;s user namespace. It maps the container&amp;rsquo;s internal database user to a large, unprivileged user ID on the host machine, fixing the permission-denied errors without compromising security.&lt;/p&gt;
+&lt;h2 id="step-5-fire-it-up"&gt;Step 5: Fire It Up
+&lt;/h2&gt;&lt;p&gt;With the permissions locked in and the files configured, start the stack in detached mode.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman-compose up -d
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="step-6-secure-remote-access-with-tailscale"&gt;Step 6: Secure Remote Access with Tailscale
+&lt;/h2&gt;&lt;p&gt;The server is running, but how do you access it securely without exposing ports to the internet? Tailscale makes this effortless.&lt;/p&gt;
+&lt;p&gt;Install Tailscale using their official script:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;curl -fsSL https://tailscale.com/install.sh &lt;span class="p"&gt;|&lt;/span&gt; sh
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Once installed, bring the node online:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo tailscale up
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Copy the authentication link provided in the terminal, paste it into your browser, and authenticate. That&amp;rsquo;s it. Anything connected to your Tailscale mesh network can now access your new Immich instance securely.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Convert Containers Into a Service with Quadlet&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;If you want to convert your containers into a proper user service, follow these steps. With the following steps, you can have immich auto start if the system restarts and so on.&lt;/p&gt;
+&lt;h2 id="step-7-transition-to-quadlet-kubernetes-style"&gt;Step 7: Transition to Quadlet (Kubernetes Style)
+&lt;/h2&gt;&lt;p&gt;We can use Quadlet to treat the containers as a native systemd service. First, generate a Kubernetes YAML blueprint from the stack.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Start the stack once to group services into a Pod&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman-compose up -d
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Export the running Pod to a K8s manifest&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman kube generate pod_immich &amp;gt; ~/immich-app/immich.yaml
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman-compose down
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="step-8-networking-in-a-pod"&gt;Step 8: Networking in a Pod
+&lt;/h2&gt;&lt;p&gt;Inside a Pod, containers share the same network stack. That means Immich needs to resolve &lt;code&gt;database&lt;/code&gt; and &lt;code&gt;redis&lt;/code&gt; to &lt;code&gt;127.0.0.1&lt;/code&gt;. Add this to &lt;code&gt;immich.yaml&lt;/code&gt;.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-yaml" data-lang="yaml"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nt"&gt;spec&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;hostAliases&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;- &lt;span class="nt"&gt;ip&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;127.0.0.1&amp;#34;&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;hostnames&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;- &lt;span class="s2"&gt;&amp;#34;database&amp;#34;&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;- &lt;span class="s2"&gt;&amp;#34;redis&amp;#34;&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="step-9-configure-quadlet"&gt;Step 9: Configure Quadlet
+&lt;/h2&gt;&lt;p&gt;Move your manifest to the systemd generator directory and create the &lt;code&gt;.kube&lt;/code&gt; file.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;mkdir -p ~/.config/containers/systemd/
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;mv ~/immich-app/immich.yaml ~/.config/containers/systemd/
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Create the service definition&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;vim ~/.config/containers/systemd/immich.kube
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;&lt;code&gt;immich.kube&lt;/code&gt; content:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;span class="lnt"&gt;8
+&lt;/span&gt;&lt;span class="lnt"&gt;9
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-ini" data-lang="ini"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;[Unit]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;Description&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;Immich Kubernetes Pod Quadlet&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;After&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;network-online.target&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;[Kube]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;Yaml&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;immich.yaml&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;[Install]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;WantedBy&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;default.target&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="step-10-enable-and-boot"&gt;Step 10: Enable and Boot
+&lt;/h2&gt;&lt;p&gt;Enable lingering so the service keeps running even when you are not logged in, then start it.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo loginctl enable-linger &lt;span class="nv"&gt;$USER&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user daemon-reload
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user start immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="verification"&gt;Verification
+&lt;/h2&gt;&lt;p&gt;Check logs with:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;journalctl --user -xeu immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user status immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;If you see &lt;code&gt;database system is ready&lt;/code&gt;, the service is up.&lt;/p&gt;</description></item><item><title>Automating an NGINX Reverse Proxy with Ansible</title><link>https://rhythm1337.github.io/p/automating-an-nginx-reverse-proxy-with-ansible/</link><pubDate>Sun, 15 Feb 2026 00:00:00 +0000</pubDate><guid>https://rhythm1337.github.io/p/automating-an-nginx-reverse-proxy-with-ansible/</guid><description>&lt;img src="https://rhythm1337.github.io/p/automating-an-nginx-reverse-proxy-with-ansible/automate-nginx-reverse-proxy.png" alt="Featured image of post Automating an NGINX Reverse Proxy with Ansible" /&gt;&lt;p&gt;This writeup documents my Ansible-based reverse proxy automation and the demo video where the playbook runs end-to-end.&lt;/p&gt;
+&lt;h2 id="resources"&gt;Resources
+&lt;/h2&gt;&lt;ul&gt;
+&lt;li&gt;Code: &lt;a class="link" href="https://github.com/Rhythm1337/ansible-dynamic-proxy" target="_blank" rel="noopener"
+&gt;https://github.com/Rhythm1337/ansible-dynamic-proxy&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Demo video: &lt;a class="link" href="https://www.youtube.com/watch?v=FrCaie-2YKk" target="_blank" rel="noopener"
+&gt;https://www.youtube.com/watch?v=FrCaie-2YKk&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Handwritten notes (PDF): &lt;a class="link" href="https://github.com/Rhythm1337/ansible-dynamic-proxy/blob/master/Handwritten.pdf" target="_blank" rel="noopener"
+&gt;https://github.com/Rhythm1337/ansible-dynamic-proxy/blob/master/Handwritten.pdf&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id="the-problem"&gt;The Problem
+&lt;/h2&gt;&lt;p&gt;The goal was to obfuscate a public-facing business server located on-premise. This server runs multiple different applications and generates both inbound and outbound traffic. To date, approximately 20 TB of bandwidth has been transferred.&lt;/p&gt;
+&lt;h2 id="the-solution-reverse-proxies"&gt;The Solution: Reverse Proxies
+&lt;/h2&gt;&lt;p&gt;NGINX was chosen as the solution because it offers built-in load balancing, performance optimization, and flexibility.&lt;/p&gt;
+&lt;h2 id="the-technical-setup-and-thought-process"&gt;The Technical Setup and Thought Process
+&lt;/h2&gt;&lt;p&gt;The infrastructure is split between a public Cloud Proxy and an isolated Home Server.&lt;/p&gt;
+&lt;p&gt;&lt;img src="https://rhythm1337.github.io/p/automating-an-nginx-reverse-proxy-with-ansible/handwritten-note.jpg"
+width="1240"
+height="1755"
+srcset="https://rhythm1337.github.io/p/automating-an-nginx-reverse-proxy-with-ansible/handwritten-note_hu_1b895fa8dec610dc.jpg 480w, https://rhythm1337.github.io/p/automating-an-nginx-reverse-proxy-with-ansible/handwritten-note_hu_63c299238448a970.jpg 1024w"
+loading="lazy"
+alt="Home Server diagram"
+class="gallery-image"
+data-flex-grow="70"
+data-flex-basis="169px"
+&gt;&lt;/p&gt;
+&lt;h3 id="cloud-proxy-public"&gt;Cloud Proxy (Public)
+&lt;/h3&gt;&lt;ul&gt;
+&lt;li&gt;Handles public access via the domain and cloud IP.&lt;/li&gt;
+&lt;li&gt;Runs NGINX.&lt;/li&gt;
+&lt;li&gt;Traffic is directed from port 2222 to the Home Server IP on port 44690.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id="home-server-isolated"&gt;Home Server (Isolated)
+&lt;/h3&gt;&lt;ul&gt;
+&lt;li&gt;Router: Port 44690 is open.&lt;/li&gt;
+&lt;li&gt;Firewall: Blocks all connections except for the Cloud Proxy.&lt;/li&gt;
+&lt;li&gt;NGINX: Proxy Protocol is enabled. It listens on port 44690 and passes traffic to the internal DHCP IP 192.168.0.1:2222.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Note on container security: Traffic is not sent directly to the applications because they run in Docker containers. Applying firewall rules directly to these containers would cause them to break. Using the same ports on both the Business Proxy and Home Server is an intentional choice for obfuscation.&lt;/p&gt;
+&lt;h2 id="addressing-dynamic-ips-with-ansible"&gt;Addressing Dynamic IPs with Ansible
+&lt;/h2&gt;&lt;p&gt;Because the machine is hosted on-premise at a business location for security reasons, a static IP was not possible. The IP address changed frequently, creating a connection issue. The solution was Ansible, an open-source automation tool used to automate various IT processes.&lt;/p&gt;
+&lt;h2 id="the-automation-approach"&gt;The Automation Approach
+&lt;/h2&gt;&lt;ul&gt;
+&lt;li&gt;Environment setup: Configure SSH keys and develop the Ansible playbook.&lt;/li&gt;
+&lt;li&gt;On-premise execution:
+&lt;ul&gt;
+&lt;li&gt;Gather facts from the on-premise machine.&lt;/li&gt;
+&lt;li&gt;Retrieve the current IP address and save it as a fact.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;Cloud Proxy execution:
+&lt;ul&gt;
+&lt;li&gt;Gather facts from the Cloud Proxy.&lt;/li&gt;
+&lt;li&gt;Ensure all necessary packages exist.&lt;/li&gt;
+&lt;li&gt;Retrieve the saved IP of the on-premise machine.&lt;/li&gt;
+&lt;li&gt;Update all configuration files with the new IP.&lt;/li&gt;
+&lt;li&gt;Reload NGINX to apply changes.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Key detail: The playbook is designed so that if the proxy machine is ever changed, no extra setup is required beyond configuring the SSH keys.&lt;/p&gt;
+&lt;h2 id="closing-note"&gt;Closing Note
+&lt;/h2&gt;&lt;p&gt;&amp;ldquo;If you have read this far, thank you from the bottom of my heart for sticking with me. I truly appreciate you being here. :D&amp;rdquo;&lt;/p&gt;</description></item></channel></rss>
