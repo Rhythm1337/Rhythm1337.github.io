@@ -1,7 +1,7 @@
 # Rhythm Chaudhary - Portfolio
 
-Personal portfolio showcasing cybersecurity, cloud, and DevOps work.
+Personal portfolio showcasing cloud, DevOps and cybersecurity work.
 
-**Live:** https://rhythm1337.github.io
+**Live:** https://rhythmdev.me
 
 Built with Hugo + Stack theme.
