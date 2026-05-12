@@ -26,7 +26,7 @@ Most Immich guides are written for setups that do not have to deal with RHEL-spe
 
 This post walks through how to run Immich on RHEL with rootless Podman and Tailscale, with the extra steps needed to make it work cleanly.
 
-## Step 1: Download the Immich Files (default setup)
+## 1. Download the Immich Files (Default Setup)
 
 First, create the working directory and pull down the official Immich deployment files.
 
@@ -44,7 +44,7 @@ wget -O docker-compose.yml https://github.com/immich-app/immich/releases/latest/
 wget -O .env https://github.com/immich-app/immich/releases/latest/download/example.env
 ```
 
-## Step 2: Install podman-compose
+## 2. Install podman-compose
 
 Now we need a way to run this compose file. RHEL keeps its official repositories incredbly strict for enterprise stability. To get community-standard tools like `podman-compose`, we have to switch to root, enable CodeReady Builder (CRB), and get into Fedora's Extra Packages for Enterprise Linux (EPEL).
 
@@ -68,7 +68,7 @@ sudo dnf install python3-pip
 pip3 install --user podman-compose
 ```
 
-## Step 3: Edit SELinux Contexts
+## 3. Edit SELinux Contexts
 
 Next, edit the `docker-compose.yml` file. Because RHEL uses SELinux, it blocks containers from touching host files. We have to explicitly add permissions to the volume mounts inside the file.
 
@@ -91,9 +91,17 @@ When you are defining your volume paths in the compose file, append the correct 
 
 - Add a lowercase `:z` to your photo uploads and database volume folder so multiple Immich containers can share that directory without locking each other out.
 
-## Step 4: Fix PostgreSQL Permissions for Rootless Podman
+## 4. Fire It Up
 
-Before starting the server, there is one major catch with rootless Podman. Because we are running this securely as a normal user instead of `root`, the host machine doesn't recognize the container's internal PostgreSQL user. We have to translate those permissions.
+With the files configured, start the stack in detached mode.
+
+```bash
+podman-compose up -d
+```
+
+## 5. Fix PostgreSQL Permissions for Rootless Podman
+
+If the database container fails with permission errors under rootless Podman, fix the ownership on the host and restart the stack. Because we are running this securely as a normal user instead of `root`, the host machine doesn't recognize the container's internal PostgreSQL user. We have to translate those permissions.
 
 ```bash
 podman unshare chown -R 999:999 ./postgres/
@@ -101,15 +109,7 @@ podman unshare chown -R 999:999 ./postgres/
 
 The `podman unshare` command drops us into the container's user namespace. It maps the container's internal database user to a large, unprivileged user ID on the host machine, fixing the permission-denied errors without compromising security.
 
-## Step 5: Fire It Up
-
-With the permissions locked in and the files configured, start the stack in detached mode.
-
-```bash
-podman-compose up -d
-```
-
-## Step 6: Secure Remote Access with Tailscale
+## 6. Secure Remote Access with Tailscale
 
 The server is running, but how do you access it securely without exposing ports to the internet? Tailscale makes this effortless.
 
@@ -131,7 +131,7 @@ Copy the authentication link provided in the terminal, paste it into your browse
 
 If you want to convert your containers into a proper user service, follow these steps. With the following steps, you can have immich auto start if the system restarts and so on.
 
-## Step 7: Transition to Quadlet (Kubernetes Style)
+## 7. Transition to Quadlet (Kubernetes Style)
 
 We can use Quadlet to treat the containers as a native systemd service. First, generate a Kubernetes YAML blueprint from the stack.
 
@@ -144,7 +144,7 @@ podman kube generate pod_immich > ~/immich-app/immich.yaml
 podman-compose down
 ```
 
-## Step 8: Networking in a Pod
+## 8. Networking in a Pod
 
 Inside a Pod, containers share the same network stack. That means Immich needs to resolve `database` and `redis` to `127.0.0.1`. Add this to `immich.yaml`.
 
@@ -157,7 +157,7 @@ spec:
     - "redis"
 ```
 
-## Step 9: Configure Quadlet
+## 9. Configure Quadlet
 
 Move your manifest to the systemd generator directory and create the `.kube` file.
 
@@ -183,7 +183,7 @@ Yaml=immich.yaml
 WantedBy=default.target
 ```
 
-## Step 10: Enable and Boot
+## 10. Enable and Boot
 
 Enable lingering so the service keeps running even when you are not logged in, then start it.
 
@@ -193,7 +193,7 @@ systemctl --user daemon-reload
 systemctl --user start immich.service
 ```
 
-## Verification
+## 11. Verification
 
 Check logs with:
 
@@ -203,3 +203,62 @@ systemctl --user status immich.service
 ```
 
 If you see `database system is ready`, the service is up.
+
+## 12. Safe Upgrade (If You Followed This Guide)
+
+This flow is designed to avoid breaking your rootless Podman + Quadlet setup and keep your database safe.
+
+1. Check the Immich release notes for breaking changes.
+2. Stop the running service.
+3. Pull the latest images.
+4. Regenerate the Pod spec if the compose file changed.
+5. Re-apply permissions if the database fails to start.
+
+### 1) Read the release notes
+
+Go to the Immich GitHub releases page and scan for any migration notes or changes to environment variables.
+
+### 2) Stop the running service
+
+```bash
+systemctl --user stop immich.service
+```
+
+### 3) Pull the latest images
+
+```bash
+podman-compose pull
+```
+
+### 4) Regenerate the Pod (if the compose file changed)
+
+If you updated `docker-compose.yml` or `.env`, regenerate the manifest and re-apply the Quadlet file.
+
+```bash
+podman-compose up -d
+podman kube generate pod_immich > ~/immich-app/immich.yaml
+podman-compose down
+systemctl --user daemon-reload
+```
+
+### 5) Start the service
+
+```bash
+systemctl --user start immich.service
+```
+
+### 6) Fix database permissions if needed
+
+If the database fails to start due to permission errors, re-apply the rootless ownership mapping and restart.
+
+```bash
+podman unshare chown -R 999:999 ./postgres/
+systemctl --user restart immich.service
+```
+
+### 7) Verify
+
+```bash
+journalctl --user -xeu immich.service
+systemctl --user status immich.service
+```
