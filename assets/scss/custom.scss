@@ -338,23 +338,15 @@ html:has(.about-page) {
     &:nth-of-type(5) { animation-delay: 0.58s; }
     &:nth-of-type(6) { animation-delay: 0.64s; }
 
-    /* Vendor color reserved for dot, badge, arrow only */
-    --v-color: var(--accent-color);
-    --v-bg-18: rgba(0, 0, 0, 0.08);
-
-    &[data-vendor="microsoft"] {
-        --v-color: #00A4EF;
-        --v-bg-18: rgba(0, 164, 239, 0.16);
-    }
-
-    &[data-vendor="redhat"] {
-        --v-color: #EE0000;
-        --v-bg-18: rgba(238, 0, 0, 0.14);
-    }
+    /* Single neutral palette — vendor identity comes from the logo, not the chrome */
+    --v-color: var(--card-text-color-secondary);
+    --v-bg-18: var(--pre-background-color);
 
     &__link {
         position: relative;
-        display: block;
+        display: flex;
+        align-items: center;
+        gap: 14px;
         padding: 14px 18px;
         border-radius: 10px;
         color: inherit;
@@ -373,9 +365,35 @@ html:has(.about-page) {
         }
     }
 
+    &__logo {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+
+        svg, img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            max-width: none !important;
+        }
+    }
+
+    &__content {
+        flex: 1;
+        min-width: 0;
+    }
+
     &__dot {
         position: absolute;
-        left: -28px;
+        /* Line center at timeline x=8 (.ap-timeline::before is left:7, width:2).
+           Dot is positioned relative to .ap-cert__link's padding edge, which
+           sits at timeline x=33 (timeline padding-left:32 + link border:1px).
+           Dot is 12px wide → to center on line: left = 8 - 6 - 33 = -31. */
+        left: -31px;
         top: 50%;
         transform: translateY(-50%);
         width: 12px;
