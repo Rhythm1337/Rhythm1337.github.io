@@ -1,0 +1,115 @@
+# Building a Single Node OpenShift Lab: VM Configuration & Troubleshooting on Fedora
+
+Deploying a Single Node OpenShift (SNO) cluster locally via KVM/QEMU requires exact virtual machine configurations to prevent silent failures and resource starvation. 
+
+This guide covers the end-to-end setup: bootstrapping the cluster via Red Hat's Assisted Installer, executing the critical VM XML edits needed for OpenShift CoreOS (RHCOS) to run smoothly on a Fedora host, and configuring local DNS.
+
+---
+
+## 1. Generating the Discovery ISO
+
+The most reliable way to deploy a KVM-based SNO cluster is using the Red Hat Hybrid Cloud Console.
+
+1.  Navigate to [cloud.redhat.com](https://cloud.redhat.com) and log in.
+2.  Go to **OpenShift > Clusters > Create Cluster**.
+![alt text](image.png)
+3.  Select the **Datacenter** tab and on **Assisted Installer** click on **create clsuter**.
+4.  Configure the initial cluster details:
+    *   **Cluster Name:** `local-sno` (or your preferred name).
+    *   **Base Domain:** `example.com` (or your preferred domain).
+    *   **Install single node OpenShift (SNO):** Ensure this box is checked.
+![alt text](image-1.png)
+5.  Click next and select any operators you want, I am skipping any additional operators right now as I wont have enough ram for my setup.
+
+6. Click next and in host discovery tab select **add a host**. Select **Full image file** as I have noticed its the most stable for these kinds of setups
+**Inject your SSH Key:** During the wizard configuration, ensure you paste your host machine's public SSH key (usually `~/.ssh/id_rsa.pub`). If you skip this, you will be permanently locked out of the `core` user backend later.
+If you dont have a key generated then you can run the following command on the host machine
+    ```bash
+    ssh-keygen
+    ```
+    ![alt text](image-2.png)
+
+7.  Generate the **Discovery ISO**. You will mount this ISO to your virtual machine so it can boot and register itself with the Red Hat console.
+
+> If the downloaded file is exactly 1024 MB then the fiel downloaded might be currupted, make sure to use any kind of download manager as usually no openshift image is exactly 1024 MB
+
+8. If your download speed is super slow then I suggest using a download manager like free download manager [freedownloadmanager.org](https://www.freedownloadmanager.org/)
+and copy the **Discovery ISO URL** to the download manager for a faster speed.
+![alt text](image-4.png)
+
+---
+
+## 2. Virtual Machine Provisioning & Configuration
+
+Creating a standard "Next -> Next -> Finish" VM in `virt-manager` will fail for OpenShift. You must carefully define the hardware limits and edit the underlying XML before the first boot.
+
+### Step 2.1: Initial Hardware Allocation
+*   **CPU:** 8 - 16 vCPUs. *(Note: If your device select more during installation as it can help speed up the process)*
+*   **RAM:** 16 GB minimum. *(Note: Initial lab attempts using 16 GB of RAM will work but if you want to run multiple applications at the same time then the ram will become ).*
+*   **Storage:** 150 GB `qcow2` sparse image.
+*   **Network:** Default NAT virtual network (`virbr0`).
+*   **Boot Media:** Attach the Discovery ISO downloaded in Step 1 if not yet attached.
+> For **Operating System select** either rhel9 or 10 unknown or the one at the bottom of the list
+    ![alt text](image-5.png)
+> Select **customize configuration before install** as there are some additional configurations that need to be done if you want to customize anything
+    ![alt text](image-6.png)
+
+
+## 3. Installation and Booting
+
+1.  Power on the virtual machine in `virt-manager`.
+2.  The VM will boot from the Discovery ISO and load the live CoreOS environment into memory. 
+3.  Return to your browser at `cloud.redhat.com`. Within a few minutes, your VM will appear in the web console as a discovered host with a `Ready` status.
+![alt text](image-8.png)
+4.  Verify the network settings in the web UI (ensure it picked up an IP address from your KVM NAT network, usually in the `192.168.122.x` range).
+5.  Click **Install Cluster**.
+![alt text](image-9.png)
+6.  The installer will format your `qcow2` drive, pull down the OpenShift payload, and initiate a reboot. 
+    *   *Important:* Remove the Discovery ISO from the virtual CD-ROM drive during this reboot so it boots directly from the hard drive.
+
+> **To note:**
+> Do not take a VM snapshot while the cluster is still installing or starting up. Taking a snapshot while OpenShift is in an incomplete state will corrupt the etcd database upon restoration. Wait until the cluster finishes entirely (30-45 minutes) and `oc get nodes` reports a solid `Ready` status before taking your first snapshot.
+
+---
+
+## 4. Local DNS Resolution (/etc/hosts)
+
+Because this is a local KVM setup without a dedicated DNS server, your Fedora host does not know how to resolve the OpenShift API or web console URLs to your virtual machine's IP address.
+
+You must manually map the cluster routes on your host machine.
+
+1.  Find the IP address of your OpenShift VM (e.g., `192.168.122.50`).
+2.  Edit the `/etc/hosts` file on your Fedora host:
+    ```bash
+    sudo nano /etc/hosts
+    ```
+3.  Append the following entries. Substitute the IP address with your VM's IP, and update the domain if you did not use `local-sno.example.com`:
+    ```text
+    # OpenShift SNO Local Lab
+    192.168.122.50 api.local-sno.example.com
+    192.168.122.50 api-int.local-sno.example.com
+    192.168.122.50 oauth-openshift.apps.local-sno.example.com
+    192.168.122.50 console-openshift-console.apps.local-sno.example.com
+    
+    # Catch-all for other apps (Note: /etc/hosts does not support true wildcards, 
+    # so you must add specific app routes here as you deploy them)
+    ```
+4.  Save and exit.
+
+You can now open a web browser on your Fedora host, navigate to `https://console-openshift-console.apps.local-sno.example.com`, and log in using the `kubeadmin` credentials provided by the Assisted Installer.
+
+---
+
+## 5. Debug Guide: 
+
+If you ever lose web console access or things go  wrong with the node, you can use the CLI to break directly into the CoreOS host file system.
+
+1.  Assuming you configured your `KUBECONFIG` or logged in via `oc login`, spawn a privileged debug pod on the node:
+    ```bash
+    oc debug node/local-sno
+    ```
+2.  Go your root directory to the actual host filesystem:
+    ```bash
+    chroot /host
+    ```
+From here, you are running as `root` on the actual virtual machine. You can inspect kernel logs (`dmesg`), check loaded network modules, manage `systemd` services, and interact directly with the underlying `crio` container runtime.

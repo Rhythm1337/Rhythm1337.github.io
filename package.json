@@ -1,0 +1,10 @@
+{
+  "name": "rhythm-portfolio",
+  "version": "1.0.0",
+  "description": "Personal portfolio built with Hugo + Stack theme",
+  "private": true,
+  "scripts": {
+    "dev": "hugo server -D --port 1414",
+    "build": "hugo --minify"
+  }
+}
