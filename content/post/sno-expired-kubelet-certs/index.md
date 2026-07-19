@@ -1,7 +1,7 @@
 ---
 title: "Recovering a Single Node OpenShift Cluster from Expired Kubelet Certificates"
 description: "What happens when your SNO's kubelet cert expires, why everything breaks, and how to fix it, from a quick boot-time recovery to a full repair"
-date: 2026-07-22
+date: 2026-07-19
 draft: false
 categories:
   - Projects
