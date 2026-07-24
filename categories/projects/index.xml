@@ -1,0 +1,639 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Projects on Rhythm Chaudhary</title><link>https://rhythmdev.me/categories/projects/</link><description>Recent content in Projects on Rhythm Chaudhary</description><generator>Hugo -- gohugo.io</generator><language>en-us</language><lastBuildDate>Sat, 18 Jul 2026 00:00:00 +0000</lastBuildDate><atom:link href="https://rhythmdev.me/categories/projects/index.xml" rel="self" type="application/rss+xml"/><item><title>Setting Up a Single Node OpenShift Lab on Fedora</title><link>https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/</link><pubDate>Sat, 18 Jul 2026 00:00:00 +0000</pubDate><guid>https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/</guid><description>&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/cluster-details.png" alt="Featured image of post Setting Up a Single Node OpenShift Lab on Fedora" /&gt;&lt;p&gt;Running a Single Node OpenShift (SNO) cluster locally on KVM/QEMU is doable, but the VM setup matters. If the configuration is off, it usually fails quietly or runs out of resources.&lt;/p&gt;
+&lt;p&gt;This guide shows how I set up the cluster with Red Hat&amp;rsquo;s Assisted Installer, the VM tweaks OpenShift CoreOS (RHCOS) needed on a Fedora host, and the local DNS entries that let me actually reach the cluster.&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="1-generating-the-discovery-iso"&gt;1. Generating the Discovery ISO
+&lt;/h2&gt;&lt;p&gt;The most reliable way to deploy a KVM-based SNO cluster is using the Red Hat Hybrid Cloud Console.&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;Navigate to &lt;a class="link" href="https://cloud.redhat.com" target="_blank" rel="noopener"
+&gt;cloud.redhat.com&lt;/a&gt; and log in.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Go to &lt;strong&gt;OpenShift &amp;gt; Clusters &amp;gt; Create Cluster&lt;/strong&gt;.
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/create-cluster.png"
+width="3488"
+height="1782"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/create-cluster_hu_1f13c3d349a77390.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/create-cluster_hu_da7569087db63a60.png 1024w"
+loading="lazy"
+alt="Clusters list in the Red Hat Hybrid Cloud Console with the Create cluster button"
+class="gallery-image"
+data-flex-grow="195"
+data-flex-basis="469px"
+&gt;&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Select the &lt;strong&gt;Datacenter&lt;/strong&gt; tab and on &lt;strong&gt;Assisted Installer&lt;/strong&gt; click on &lt;strong&gt;create cluster&lt;/strong&gt;.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Configure the initial cluster details:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Cluster Name:&lt;/strong&gt; &lt;code&gt;local-sno&lt;/code&gt; (or your preferred name).&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Base Domain:&lt;/strong&gt; &lt;code&gt;example.com&lt;/code&gt; (or your preferred domain).&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Install single node OpenShift (SNO):&lt;/strong&gt; Ensure this box is checked.
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/cluster-details.png"
+width="3472"
+height="2822"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/cluster-details_hu_70679df080d8a75f.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/cluster-details_hu_8c0164a3a4af1e20.png 1024w"
+loading="lazy"
+alt="Assisted Installer cluster details form with the cluster name, base domain, and Single Node OpenShift selected"
+class="gallery-image"
+data-flex-grow="123"
+data-flex-basis="295px"
+&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Click next and select any operators you want, I am skipping any additional operators right now as I won&amp;rsquo;t have enough ram for my setup.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Click next and in host discovery tab select &lt;strong&gt;add a host&lt;/strong&gt;. Select &lt;strong&gt;Full image file&lt;/strong&gt; as I have noticed it&amp;rsquo;s the most stable for these kinds of setups
+&lt;strong&gt;Inject your SSH Key:&lt;/strong&gt; During the wizard configuration, ensure you paste your host machine&amp;rsquo;s public SSH key (usually &lt;code&gt;~/.ssh/id_rsa.pub&lt;/code&gt;). If you skip this, you will be permanently locked out of the &lt;code&gt;core&lt;/code&gt; user backend later.
+If you don&amp;rsquo;t have a key generated then you can run the following command on the host machine&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;ssh-keygen
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/provisioning-type.png"
+width="1992"
+height="1616"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/provisioning-type_hu_1220c622a77684dc.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/provisioning-type_hu_d6f21aa6c7fe3cd6.png 1024w"
+loading="lazy"
+alt="Add host dialog with the provisioning type set to Full image file and the SSH public key field"
+class="gallery-image"
+data-flex-grow="123"
+data-flex-basis="295px"
+&gt;&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Generate the &lt;strong&gt;Discovery ISO&lt;/strong&gt;. You will mount this ISO to your virtual machine so it can boot and register itself with the Red Hat console.&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;blockquote&gt;
+&lt;p&gt;If the downloaded file is exactly 1024 MB then the file downloaded might be corrupted, make sure to use any kind of download manager as usually no OpenShift image is exactly 1024 MB&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;ol start="8"&gt;
+&lt;li&gt;If your download speed is super slow then I suggest using a download manager like free download manager &lt;a class="link" href="https://www.freedownloadmanager.org/" target="_blank" rel="noopener"
+&gt;freedownloadmanager.org&lt;/a&gt;
+and copy the &lt;strong&gt;Discovery ISO URL&lt;/strong&gt; to the download manager for a faster speed.
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/discovery-iso.png"
+width="1992"
+height="1616"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/discovery-iso_hu_34c4aecc9e705915.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/discovery-iso_hu_4eb91774ad3f1bbc.png 1024w"
+loading="lazy"
+alt="Discovery ISO ready dialog showing the Discovery ISO URL and download command"
+class="gallery-image"
+data-flex-grow="123"
+data-flex-basis="295px"
+&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;hr&gt;
+&lt;h2 id="2-virtual-machine-provisioning--configuration"&gt;2. Virtual Machine Provisioning &amp;amp; Configuration
+&lt;/h2&gt;&lt;p&gt;Creating a standard &amp;ldquo;Next -&amp;gt; Next -&amp;gt; Finish&amp;rdquo; VM in &lt;code&gt;virt-manager&lt;/code&gt; will fail for OpenShift. You must carefully define the hardware limits and edit the underlying XML before the first boot.&lt;/p&gt;
+&lt;h3 id="step-21-initial-hardware-allocation"&gt;Step 2.1: Initial Hardware Allocation
+&lt;/h3&gt;&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;CPU:&lt;/strong&gt; 8 - 16 vCPUs. &lt;em&gt;(Note: If your device allows, select more during installation as it can help speed up the process.)&lt;/em&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;RAM:&lt;/strong&gt; 16 GB minimum. &lt;em&gt;(Note: Initial lab attempts using 16 GB of RAM will work, but if you want to run multiple applications at the same time then the ram will become a bottleneck.)&lt;/em&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Storage:&lt;/strong&gt; 150 GB &lt;code&gt;qcow2&lt;/code&gt; sparse image.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Network:&lt;/strong&gt; Default NAT virtual network (&lt;code&gt;virbr0&lt;/code&gt;).&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Boot Media:&lt;/strong&gt; Attach the Discovery ISO downloaded in Step 1 if not yet attached.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;blockquote&gt;
+&lt;p&gt;For &lt;strong&gt;Operating System select&lt;/strong&gt; either rhel9 or 10 unknown or the one at the bottom of the list
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/vm-os-selection.png"
+width="1100"
+height="1166"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/vm-os-selection_hu_e7accf710b4236fb.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/vm-os-selection_hu_9fd8734c47ddb010.png 1024w"
+loading="lazy"
+alt="New VM wizard choosing the Discovery ISO install media and Red Hat Enterprise Linux 9 as the operating system"
+class="gallery-image"
+data-flex-grow="94"
+data-flex-basis="226px"
+&gt;
+Select &lt;strong&gt;customize configuration before install&lt;/strong&gt; as there are some additional configurations that need to be done if you want to customize anything
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/vm-customize-config.png"
+width="1100"
+height="1166"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/vm-customize-config_hu_5ba873e7d1daa0c1.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/vm-customize-config_hu_67299b4e341f0957.png 1024w"
+loading="lazy"
+alt="New VM wizard summary with Customize configuration before install checked"
+class="gallery-image"
+data-flex-grow="94"
+data-flex-basis="226px"
+&gt;&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id="3-installation-and-booting"&gt;3. Installation and Booting
+&lt;/h2&gt;&lt;ol&gt;
+&lt;li&gt;Power on the virtual machine in &lt;code&gt;virt-manager&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;The VM will boot from the Discovery ISO and load the live CoreOS environment into memory.&lt;/li&gt;
+&lt;li&gt;Return to your browser at &lt;code&gt;cloud.redhat.com&lt;/code&gt;. Within a few minutes, your VM will appear in the web console as a discovered host with a &lt;code&gt;Ready&lt;/code&gt; status.
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/host-discovery-ready.png"
+width="3760"
+height="1504"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/host-discovery-ready_hu_3d757fed220f8f0d.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/host-discovery-ready_hu_1fec5da44e3fdc95.png 1024w"
+loading="lazy"
+alt="Assisted Installer host discovery tab showing the discovered host with a Ready status in the host inventory"
+class="gallery-image"
+data-flex-grow="250"
+data-flex-basis="600px"
+&gt;&lt;/li&gt;
+&lt;li&gt;Verify the network settings in the web UI (ensure it picked up an IP address from your KVM NAT network, usually in the &lt;code&gt;192.168.122.x&lt;/code&gt; range).&lt;/li&gt;
+&lt;li&gt;Click &lt;strong&gt;Install Cluster&lt;/strong&gt;.
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/review-and-create.png"
+width="2476"
+height="2402"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/review-and-create_hu_c3f188b6b269a3e5.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/review-and-create_hu_70979b39daa61e29.png 1024w"
+loading="lazy"
+alt="Review and create page showing the cluster summary and the Install cluster button"
+class="gallery-image"
+data-flex-grow="103"
+data-flex-basis="247px"
+&gt;&lt;/li&gt;
+&lt;li&gt;The installer will format your &lt;code&gt;qcow2&lt;/code&gt; drive, pull down the OpenShift payload, and initiate a reboot.
+&lt;ul&gt;
+&lt;li&gt;&lt;em&gt;Important:&lt;/em&gt; Remove the Discovery ISO from the virtual CD-ROM drive during this reboot so it boots directly from the hard drive.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;To note:&lt;/strong&gt;
+Do not take a VM snapshot while the cluster is still installing or starting up. Taking a snapshot while OpenShift is in an incomplete state will corrupt the etcd database upon restoration. Wait until the cluster finishes entirely (30-45 minutes) and &lt;code&gt;oc get nodes&lt;/code&gt; reports a solid &lt;code&gt;Ready&lt;/code&gt; status before taking your first snapshot.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr&gt;
+&lt;h2 id="4-local-dns-resolution-etchosts"&gt;4. Local DNS Resolution (/etc/hosts)
+&lt;/h2&gt;&lt;p&gt;Because this is a local KVM setup without a dedicated DNS server, your Fedora host does not know how to resolve the OpenShift API or web console URLs to your virtual machine&amp;rsquo;s IP address.&lt;/p&gt;
+&lt;p&gt;You must manually map the cluster routes on your host machine.&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;Find the IP address of your OpenShift VM (e.g., &lt;code&gt;192.168.122.50&lt;/code&gt;).&lt;/li&gt;
+&lt;li&gt;Edit the &lt;code&gt;/etc/hosts&lt;/code&gt; file on your Fedora host:
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo nano /etc/hosts
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;Append the following entries. Substitute the IP address with your VM&amp;rsquo;s IP, and update the domain if you did not use &lt;code&gt;local-sno.example.com&lt;/code&gt;:
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;span class="lnt"&gt;8
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-text" data-lang="text"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;# OpenShift SNO Local Lab
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;192.168.122.50 api.local-sno.example.com
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;192.168.122.50 api-int.local-sno.example.com
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;192.168.122.50 oauth-openshift.apps.local-sno.example.com
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;192.168.122.50 console-openshift-console.apps.local-sno.example.com
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;# Catch-all for other apps (Note: /etc/hosts does not support true wildcards,
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;# so you must add specific app routes here as you deploy them)
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;Save and exit.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;You can now open a web browser on your Fedora host, navigate to &lt;code&gt;https://console-openshift-console.apps.local-sno.example.com&lt;/code&gt;, and log in using the &lt;code&gt;kubeadmin&lt;/code&gt; credentials provided by the Assisted Installer!&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="5-debug-guide"&gt;5. Debug Guide:
+&lt;/h2&gt;&lt;p&gt;If you ever lose web console access or things go wrong with the node, you can use the CLI to break directly into the CoreOS host file system.&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;Assuming you configured your &lt;code&gt;KUBECONFIG&lt;/code&gt; or logged in via &lt;code&gt;oc login&lt;/code&gt;, spawn a privileged debug pod on the node:
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc debug node/local-sno
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;Change your root directory to the actual host filesystem:
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;chroot /host
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;From here, you are running as &lt;code&gt;root&lt;/code&gt; on the actual virtual machine. You can inspect kernel logs (&lt;code&gt;dmesg&lt;/code&gt;), check loaded network modules, manage &lt;code&gt;systemd&lt;/code&gt; services, and interact directly with the underlying &lt;code&gt;crio&lt;/code&gt; container runtime.&lt;/p&gt;</description></item><item><title>Self-Hosting Google Photos with Immich on RHEL and Podman</title><link>https://rhythmdev.me/p/self-hosting-google-photos-with-immich-on-rhel-and-podman/</link><pubDate>Tue, 17 Mar 2026 00:00:00 +0000</pubDate><guid>https://rhythmdev.me/p/self-hosting-google-photos-with-immich-on-rhel-and-podman/</guid><description>&lt;img src="https://rhythmdev.me/p/self-hosting-google-photos-with-immich-on-rhel-and-podman/thumbnail.png" alt="Featured image of post Self-Hosting Google Photos with Immich on RHEL and Podman" /&gt;&lt;ul&gt;
+&lt;li&gt;Showcase video: &lt;a class="link" href="https://www.youtube.com/watch?v=FrCaie-2YKk" target="_blank" rel="noopener"
+&gt;https://www.youtube.com/watch?v=FrCaie-2YKk&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;Introductions&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;I wanted to set up a simple self-hosted photo backup server with Immich on RHEL.&lt;/p&gt;
+&lt;p&gt;Most Immich guides are written for setups that do not have to deal with RHEL-specific SELinux behavior. The installation itself is not too bad, but getting the permissions right can be frustrating if you have never done it before.&lt;/p&gt;
+&lt;p&gt;This post walks through how to run Immich on RHEL with rootless Podman and Tailscale, with the extra steps needed to make it work cleanly.&lt;/p&gt;
+&lt;h2 id="1-download-the-immich-files-default-setup"&gt;1. Download the Immich Files (Default Setup)
+&lt;/h2&gt;&lt;p&gt;First, create the working directory and pull down the official Immich deployment files.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt; 1
+&lt;/span&gt;&lt;span class="lnt"&gt; 2
+&lt;/span&gt;&lt;span class="lnt"&gt; 3
+&lt;/span&gt;&lt;span class="lnt"&gt; 4
+&lt;/span&gt;&lt;span class="lnt"&gt; 5
+&lt;/span&gt;&lt;span class="lnt"&gt; 6
+&lt;/span&gt;&lt;span class="lnt"&gt; 7
+&lt;/span&gt;&lt;span class="lnt"&gt; 8
+&lt;/span&gt;&lt;span class="lnt"&gt; 9
+&lt;/span&gt;&lt;span class="lnt"&gt;10
+&lt;/span&gt;&lt;span class="lnt"&gt;11
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Create the directory for Immich&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;mkdir ./immich-app
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Navigate into the directory&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;cd&lt;/span&gt; ./immich-app
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Download the docker-compose.yml file&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;wget -O docker-compose.yml https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Download the example .env file&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;wget -O .env https://github.com/immich-app/immich/releases/latest/download/example.env
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="2-install-podman-compose"&gt;2. Install podman-compose
+&lt;/h2&gt;&lt;p&gt;Now we need a way to run this compose file. RHEL keeps its official repositories incredbly strict for enterprise stability. To get community-standard tools like &lt;code&gt;podman-compose&lt;/code&gt;, we have to switch to root, enable CodeReady Builder (CRB), and get into Fedora&amp;rsquo;s Extra Packages for Enterprise Linux (EPEL).&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt; 1
+&lt;/span&gt;&lt;span class="lnt"&gt; 2
+&lt;/span&gt;&lt;span class="lnt"&gt; 3
+&lt;/span&gt;&lt;span class="lnt"&gt; 4
+&lt;/span&gt;&lt;span class="lnt"&gt; 5
+&lt;/span&gt;&lt;span class="lnt"&gt; 6
+&lt;/span&gt;&lt;span class="lnt"&gt; 7
+&lt;/span&gt;&lt;span class="lnt"&gt; 8
+&lt;/span&gt;&lt;span class="lnt"&gt; 9
+&lt;/span&gt;&lt;span class="lnt"&gt;10
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Switch to root&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;su -
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Enable CRB and install EPEL&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;subscription-manager repos --enable codeready-builder-for-rhel-10-&lt;span class="k"&gt;$(&lt;/span&gt;arch&lt;span class="k"&gt;)&lt;/span&gt;-rpms
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;logout&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Install podman-compose&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo dnf install podman-compose
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Tip: If the CRB repository does not work, you can always bypass it by installing &lt;code&gt;pip&lt;/code&gt; and installing &lt;code&gt;podman-compose&lt;/code&gt; through Python instead.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo dnf install python3-pip
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;pip3 install --user podman-compose
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="3-edit-selinux-contexts"&gt;3. Edit SELinux Contexts
+&lt;/h2&gt;&lt;p&gt;Next, edit the &lt;code&gt;docker-compose.yml&lt;/code&gt; file. Because RHEL uses SELinux, it blocks containers from touching host files. We have to explicitly add permissions to the volume mounts inside the file.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;vim docker-compose.yml
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;span class="lnt"&gt;8
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;19&lt;/span&gt; volumes:
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;20&lt;/span&gt; &lt;span class="c1"&gt;# Do not edit the next line. If you want to change the media storage location on your system, edit the value of UPLOAD_LOCATION in th e .env file&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;21&lt;/span&gt; - &lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;UPLOAD_LOCATION&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;:/data:z
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;22&lt;/span&gt; - /etc/localtime:/etc/localtime:ro
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;67&lt;/span&gt; volumes:
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;68&lt;/span&gt; &lt;span class="c1"&gt;# Do not edit the next line. If you want to change the database storage location on your system, edit the value of DB_DATA_LOCATION i n the .env file&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;69&lt;/span&gt; - &lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;DB_DATA_LOCATION&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;:/var/lib/postgresql/data:z
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;When you are defining your volume paths in the compose file, append the correct SELinux labels:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Add a lowercase &lt;code&gt;:z&lt;/code&gt; to your photo uploads and database volume folder so multiple Immich containers can share that directory without locking each other out.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id="4-fire-it-up"&gt;4. Fire It Up
+&lt;/h2&gt;&lt;p&gt;With the files configured, start the stack in detached mode.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman-compose up -d
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="5-fix-postgresql-permissions-for-rootless-podman"&gt;5. Fix PostgreSQL Permissions for Rootless Podman
+&lt;/h2&gt;&lt;p&gt;If the database container fails with permission errors under rootless Podman, fix the ownership on the host and restart the stack. Because we are running this securely as a normal user instead of &lt;code&gt;root&lt;/code&gt;, the host machine doesn&amp;rsquo;t recognize the container&amp;rsquo;s internal PostgreSQL user. We have to translate those permissions.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman unshare chown -R 999:999 ./postgres/
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;The &lt;code&gt;podman unshare&lt;/code&gt; command drops us into the container&amp;rsquo;s user namespace. It maps the container&amp;rsquo;s internal database user to a large, unprivileged user ID on the host machine, fixing the permission-denied errors without compromising security.&lt;/p&gt;
+&lt;h2 id="6-secure-remote-access-with-tailscale"&gt;6. Secure Remote Access with Tailscale
+&lt;/h2&gt;&lt;p&gt;The server is running, but how do you access it securely without exposing ports to the internet? Tailscale makes this effortless.&lt;/p&gt;
+&lt;p&gt;Install Tailscale using their official script:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;curl -fsSL https://tailscale.com/install.sh &lt;span class="p"&gt;|&lt;/span&gt; sh
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Once installed, bring the node online:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo tailscale up
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Copy the authentication link provided in the terminal, paste it into your browser, and authenticate. That&amp;rsquo;s it. Anything connected to your Tailscale mesh network can now access your new Immich instance securely.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Convert Containers Into a Service with Quadlet&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;If you want to convert your containers into a proper user service, follow these steps. With the following steps, you can have immich auto start if the system restarts and so on.&lt;/p&gt;
+&lt;h2 id="7-transition-to-quadlet-kubernetes-style"&gt;7. Transition to Quadlet (Kubernetes Style)
+&lt;/h2&gt;&lt;p&gt;We can use Quadlet to treat the containers as a native systemd service. First, generate a Kubernetes YAML blueprint from the stack.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Start the stack once to group services into a Pod&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman-compose up -d
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Export the running Pod to a K8s manifest&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman kube generate pod_immich &amp;gt; ~/immich-app/immich.yaml
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman-compose down
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="8-networking-in-a-pod"&gt;8. Networking in a Pod
+&lt;/h2&gt;&lt;p&gt;Inside a Pod, containers share the same network stack. That means Immich needs to resolve &lt;code&gt;database&lt;/code&gt; and &lt;code&gt;redis&lt;/code&gt; to &lt;code&gt;127.0.0.1&lt;/code&gt;. Add this to &lt;code&gt;immich.yaml&lt;/code&gt;.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-yaml" data-lang="yaml"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nt"&gt;spec&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;hostAliases&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;- &lt;span class="nt"&gt;ip&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;127.0.0.1&amp;#34;&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;hostnames&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;- &lt;span class="s2"&gt;&amp;#34;database&amp;#34;&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;- &lt;span class="s2"&gt;&amp;#34;redis&amp;#34;&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="9-configure-quadlet"&gt;9. Configure Quadlet
+&lt;/h2&gt;&lt;p&gt;Move your manifest to the systemd generator directory and create the &lt;code&gt;.kube&lt;/code&gt; file.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;mkdir -p ~/.config/containers/systemd/
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;mv ~/immich-app/immich.yaml ~/.config/containers/systemd/
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Create the service definition&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;vim ~/.config/containers/systemd/immich.kube
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;&lt;code&gt;immich.kube&lt;/code&gt; content:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;span class="lnt"&gt;8
+&lt;/span&gt;&lt;span class="lnt"&gt;9
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-ini" data-lang="ini"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;[Unit]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;Description&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;Immich Kubernetes Pod Quadlet&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;After&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;network-online.target&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;[Kube]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;Yaml&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;immich.yaml&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;[Install]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;WantedBy&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;default.target&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="10-enable-and-boot"&gt;10. Enable and Boot
+&lt;/h2&gt;&lt;p&gt;Enable lingering so the service keeps running even when you are not logged in, then start it.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo loginctl enable-linger &lt;span class="nv"&gt;$USER&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user daemon-reload
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user start immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="11-verification"&gt;11. Verification
+&lt;/h2&gt;&lt;p&gt;Check logs with:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;journalctl --user -xeu immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user status immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;If you see &lt;code&gt;database system is ready&lt;/code&gt;, the service is up.&lt;/p&gt;
+&lt;h2 id="12-safe-upgrade-if-you-followed-this-guide"&gt;12. Safe Upgrade (If You Followed This Guide)
+&lt;/h2&gt;&lt;p&gt;This flow is designed to avoid breaking your rootless Podman + Quadlet setup and keep your database safe.&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;Check the Immich release notes for breaking changes.&lt;/li&gt;
+&lt;li&gt;Stop the running service.&lt;/li&gt;
+&lt;li&gt;Pull the latest images.&lt;/li&gt;
+&lt;li&gt;Regenerate the Pod spec if the compose file changed.&lt;/li&gt;
+&lt;li&gt;Re-apply permissions if the database fails to start.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id="1-read-the-release-notes"&gt;1) Read the release notes
+&lt;/h3&gt;&lt;p&gt;Go to the Immich GitHub releases page and scan for any migration notes or changes to environment variables.&lt;/p&gt;
+&lt;h3 id="2-stop-the-running-service"&gt;2) Stop the running service
+&lt;/h3&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user stop immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h3 id="3-pull-the-latest-images"&gt;3) Pull the latest images
+&lt;/h3&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman-compose pull
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h3 id="4-regenerate-the-pod-if-the-compose-file-changed"&gt;4) Regenerate the Pod (if the compose file changed)
+&lt;/h3&gt;&lt;p&gt;If you updated &lt;code&gt;docker-compose.yml&lt;/code&gt; or &lt;code&gt;.env&lt;/code&gt;, regenerate the manifest and re-apply the Quadlet file.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman-compose up -d
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman kube generate pod_immich &amp;gt; ~/immich-app/immich.yaml
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman-compose down
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user daemon-reload
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h3 id="5-start-the-service"&gt;5) Start the service
+&lt;/h3&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user start immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h3 id="6-fix-database-permissions-if-needed"&gt;6) Fix database permissions if needed
+&lt;/h3&gt;&lt;p&gt;If the database fails to start due to permission errors, re-apply the rootless ownership mapping and restart.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman unshare chown -R 999:999 ./postgres/
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user restart immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h3 id="7-verify"&gt;7) Verify
+&lt;/h3&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;journalctl --user -xeu immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user status immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;</description></item><item><title>Automating an NGINX Reverse Proxy with Ansible</title><link>https://rhythmdev.me/p/automating-an-nginx-reverse-proxy-with-ansible/</link><pubDate>Sun, 15 Feb 2026 00:00:00 +0000</pubDate><guid>https://rhythmdev.me/p/automating-an-nginx-reverse-proxy-with-ansible/</guid><description>&lt;img src="https://rhythmdev.me/p/automating-an-nginx-reverse-proxy-with-ansible/automate-nginx-reverse-proxy.png" alt="Featured image of post Automating an NGINX Reverse Proxy with Ansible" /&gt;&lt;p&gt;This writeup documents my Ansible-based reverse proxy automation and the demo video where the playbook runs end-to-end.&lt;/p&gt;
+&lt;h2 id="resources"&gt;Resources
+&lt;/h2&gt;&lt;ul&gt;
+&lt;li&gt;Code: &lt;a class="link" href="https://github.com/Rhythm1337/ansible-dynamic-proxy" target="_blank" rel="noopener"
+&gt;https://github.com/Rhythm1337/ansible-dynamic-proxy&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Demo video: &lt;a class="link" href="https://www.youtube.com/watch?v=FrCaie-2YKk" target="_blank" rel="noopener"
+&gt;https://www.youtube.com/watch?v=FrCaie-2YKk&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Handwritten notes (PDF): &lt;a class="link" href="https://github.com/Rhythm1337/ansible-dynamic-proxy/blob/master/Handwritten.pdf" target="_blank" rel="noopener"
+&gt;https://github.com/Rhythm1337/ansible-dynamic-proxy/blob/master/Handwritten.pdf&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id="the-problem"&gt;The Problem
+&lt;/h2&gt;&lt;p&gt;The goal was to obfuscate a public-facing business server located on-premise. This server runs multiple different applications and generates both inbound and outbound traffic. To date, approximately 20 TB of bandwidth has been transferred.&lt;/p&gt;
+&lt;h2 id="the-solution-reverse-proxies"&gt;The Solution: Reverse Proxies
+&lt;/h2&gt;&lt;p&gt;NGINX was chosen as the solution because it offers built-in load balancing, performance optimization, and flexibility.&lt;/p&gt;
+&lt;h2 id="the-technical-setup-and-thought-process"&gt;The Technical Setup and Thought Process
+&lt;/h2&gt;&lt;p&gt;The infrastructure is split between a public Cloud Proxy and an isolated Home Server.&lt;/p&gt;
+&lt;p&gt;&lt;img src="https://rhythmdev.me/p/automating-an-nginx-reverse-proxy-with-ansible/handwritten-note.jpg"
+width="1240"
+height="1755"
+srcset="https://rhythmdev.me/p/automating-an-nginx-reverse-proxy-with-ansible/handwritten-note_hu_1b895fa8dec610dc.jpg 480w, https://rhythmdev.me/p/automating-an-nginx-reverse-proxy-with-ansible/handwritten-note_hu_63c299238448a970.jpg 1024w"
+loading="lazy"
+alt="Home Server diagram"
+class="gallery-image"
+data-flex-grow="70"
+data-flex-basis="169px"
+&gt;&lt;/p&gt;
+&lt;h3 id="cloud-proxy-public"&gt;Cloud Proxy (Public)
+&lt;/h3&gt;&lt;ul&gt;
+&lt;li&gt;Handles public access via the domain and cloud IP.&lt;/li&gt;
+&lt;li&gt;Runs NGINX.&lt;/li&gt;
+&lt;li&gt;Traffic is directed from port 2222 to the Home Server IP on port 44690.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id="home-server-isolated"&gt;Home Server (Isolated)
+&lt;/h3&gt;&lt;ul&gt;
+&lt;li&gt;Router: Port 44690 is open.&lt;/li&gt;
+&lt;li&gt;Firewall: Blocks all connections except for the Cloud Proxy.&lt;/li&gt;
+&lt;li&gt;NGINX: Proxy Protocol is enabled. It listens on port 44690 and passes traffic to the internal DHCP IP 192.168.0.1:2222.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Note on container security: Traffic is not sent directly to the applications because they run in Docker containers. Applying firewall rules directly to these containers would cause them to break. Using the same ports on both the Business Proxy and Home Server is an intentional choice for obfuscation.&lt;/p&gt;
+&lt;h2 id="addressing-dynamic-ips-with-ansible"&gt;Addressing Dynamic IPs with Ansible
+&lt;/h2&gt;&lt;p&gt;Because the machine is hosted on-premise at a business location for security reasons, a static IP was not possible. The IP address changed frequently, creating a connection issue. The solution was Ansible, an open-source automation tool used to automate various IT processes.&lt;/p&gt;
+&lt;h2 id="the-automation-approach"&gt;The Automation Approach
+&lt;/h2&gt;&lt;ul&gt;
+&lt;li&gt;Environment setup: Configure SSH keys and develop the Ansible playbook.&lt;/li&gt;
+&lt;li&gt;On-premise execution:
+&lt;ul&gt;
+&lt;li&gt;Gather facts from the on-premise machine.&lt;/li&gt;
+&lt;li&gt;Retrieve the current IP address and save it as a fact.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;Cloud Proxy execution:
+&lt;ul&gt;
+&lt;li&gt;Gather facts from the Cloud Proxy.&lt;/li&gt;
+&lt;li&gt;Ensure all necessary packages exist.&lt;/li&gt;
+&lt;li&gt;Retrieve the saved IP of the on-premise machine.&lt;/li&gt;
+&lt;li&gt;Update all configuration files with the new IP.&lt;/li&gt;
+&lt;li&gt;Reload NGINX to apply changes.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Key detail: The playbook is designed so that if the proxy machine is ever changed, no extra setup is required beyond configuring the SSH keys.&lt;/p&gt;
+&lt;h2 id="closing-note"&gt;Closing Note
+&lt;/h2&gt;&lt;p&gt;&amp;ldquo;If you have read this far, thank you from the bottom of my heart for sticking with me. I truly appreciate you being here. :D&amp;rdquo;&lt;/p&gt;</description></item></channel></rss>

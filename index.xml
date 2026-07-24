@@ -1,0 +1,1286 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Rhythm Chaudhary</title><link>https://rhythmdev.me/</link><description>Recent content on Rhythm Chaudhary</description><generator>Hugo -- gohugo.io</generator><language>en-us</language><lastBuildDate>Sun, 19 Jul 2026 00:00:00 +0000</lastBuildDate><atom:link href="https://rhythmdev.me/index.xml" rel="self" type="application/rss+xml"/><item><title>Recovering a Single Node OpenShift Cluster from Expired Kubelet Certificates</title><link>https://rhythmdev.me/p/recovering-a-single-node-openshift-cluster-from-expired-kubelet-certificates/</link><pubDate>Sun, 19 Jul 2026 00:00:00 +0000</pubDate><guid>https://rhythmdev.me/p/recovering-a-single-node-openshift-cluster-from-expired-kubelet-certificates/</guid><description>&lt;img src="https://rhythmdev.me/p/recovering-a-single-node-openshift-cluster-from-expired-kubelet-certificates/degraded-cluster-operators.webp" alt="Featured image of post Recovering a Single Node OpenShift Cluster from Expired Kubelet Certificates" /&gt;&lt;p&gt;If you have set up OpenShift in a VM, especially a Single Node OpenShift (SNO) lab, there is a good chance you will run into this at some point. You shut the cluster down, come back a day or two later, and open the web console to log in. Instead of the login page, you get met with this:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-fallback" data-lang="fallback"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;error: server_error The authorization server encountered an unexpected condition
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;that prevented it from fulfilling the request.
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;That error is the single most common problem with an SNO lab: expired kubelet certificates. The short version is that OpenShift uses TLS certificates that only last about 24 hours. They rotate on their own while the cluster is running, but if the machine is off when one expires, the kubelet can no longer authenticate on the next boot, and the whole cluster falls apart.&lt;/p&gt;
+&lt;h2 id="just-want-it-fixed"&gt;Just Want It Fixed?
+&lt;/h2&gt;&lt;p&gt;I wrote two scripts that handle the entire recovery for you. They run from your workstation (the Fedora host), not from the node. Grab them with:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Quick fix: run after every boot&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;curl -O https://rhythmdev.me/scripts/fix-sno-quick.sh
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Full fix: for when the cluster has been broken for a while&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;curl -O https://rhythmdev.me/scripts/fix-sno-full.sh
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;chmod +x fix-sno-quick.sh fix-sno-full.sh
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Run the quick one first:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;./fix-sno-quick.sh
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;If the cluster is still unhealthy after 10 minutes, run the full one:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;./fix-sno-full.sh
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;That is all most people need. If you would rather understand what is actually going wrong and fix it by hand, the rest of this post walks through every step, and the two scripts just do the same thing automatically.&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;New to SNO on a VM? My &lt;a class="link" href="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/" target="_blank" rel="noopener"
+&gt;previous post on setting up a Single Node OpenShift lab on Fedora&lt;/a&gt; covers the initial install.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr&gt;
+&lt;h2 id="why-this-happens"&gt;Why This Happens
+&lt;/h2&gt;&lt;p&gt;OpenShift uses short-lived TLS certificates (around 24 hours) for communication between the kubelet and the API server. While the cluster is running, these rotate automatically before they expire. The trouble starts when the cluster is off. The certificate expires while the machine is shut down, and on the next boot the kubelet can no longer authenticate to request a new one.&lt;/p&gt;
+&lt;p&gt;Here is how it cascades:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;The kubelet cert expires.&lt;/li&gt;
+&lt;li&gt;The kubelet tries to talk to the kube-apiserver and gets treated as &lt;code&gt;system:anonymous&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;The kubelet can&amp;rsquo;t update node status, so heartbeats fail.&lt;/li&gt;
+&lt;li&gt;The node controller marks the node &lt;code&gt;NotReady&lt;/code&gt; and applies &lt;code&gt;unreachable&lt;/code&gt; taints.&lt;/li&gt;
+&lt;li&gt;No new pods can schedule on the tainted node.&lt;/li&gt;
+&lt;li&gt;Running pods start failing because their service account tokens can&amp;rsquo;t be fetched.&lt;/li&gt;
+&lt;li&gt;OAuth, the console, and everything else falls over.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;The login error is just the symptom sitting on top of all of this. Run &lt;code&gt;oc get clusteroperators&lt;/code&gt; at this point and you get a wall of operators reporting &lt;code&gt;Available: False&lt;/code&gt; and &lt;code&gt;Degraded: True&lt;/code&gt;:&lt;/p&gt;
+&lt;p&gt;&lt;img src="https://rhythmdev.me/p/recovering-a-single-node-openshift-cluster-from-expired-kubelet-certificates/degraded-cluster-operators.webp"
+width="1214"
+height="980"
+srcset="https://rhythmdev.me/p/recovering-a-single-node-openshift-cluster-from-expired-kubelet-certificates/degraded-cluster-operators_hu_ce4045eea1ecd22f.webp 480w, https://rhythmdev.me/p/recovering-a-single-node-openshift-cluster-from-expired-kubelet-certificates/degraded-cluster-operators_hu_17d734e5f4b565c9.webp 1024w"
+loading="lazy"
+alt="oc get clusteroperators output showing most operators Available False and Degraded True after the kubelet cert expired"
+class="gallery-image"
+data-flex-grow="123"
+data-flex-basis="297px"
+&gt;&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="how-to-tell-if-this-is-your-problem"&gt;How to Tell If This Is Your Problem
+&lt;/h2&gt;&lt;p&gt;SSH into your node and check the kubelet logs:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;ssh core@openshift-cluster
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo journalctl -u kubelet --since &lt;span class="s2"&gt;&amp;#34;5 min ago&amp;#34;&lt;/span&gt; --no-pager &lt;span class="p"&gt;|&lt;/span&gt; tail -30
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;If you see lines like these, it&amp;rsquo;s the cert:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-fallback" data-lang="fallback"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&amp;#34;Current certificate is expired&amp;#34; logger=&amp;#34;kubernetes.io/kube-apiserver-client-kubelet&amp;#34;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&amp;#34;Failed to get status for pod&amp;#34; err=&amp;#34;pods \&amp;#34;xyz\&amp;#34; is forbidden: User \&amp;#34;system:anonymous\&amp;#34; cannot get resource...&amp;#34;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;You can also check the cert directly:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo openssl x509 -noout -dates -in /var/lib/kubelet/pki/kubelet-client-current.pem
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;If &lt;code&gt;notAfter&lt;/code&gt; is in the past, that&amp;rsquo;s your problem.&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;Check your clock first.&lt;/strong&gt; Run &lt;code&gt;timedatectl&lt;/code&gt; and make sure the system time is correct. A drifted clock makes valid certs look expired. If you&amp;rsquo;re on VMware, make sure VMware time sync is disabled, as it can quietly mess with your VM&amp;rsquo;s clock.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr&gt;
+&lt;h2 id="quick-fix-boot-time-recovery"&gt;Quick Fix (Boot-Time Recovery)
+&lt;/h2&gt;&lt;p&gt;This is for when you have just booted the cluster and the cert expired while it was off. No pods have had time to build up stale state yet.&lt;/p&gt;
+&lt;h3 id="step-1-delete-the-expired-cert-and-restart-kubelet"&gt;Step 1: Delete the expired cert and restart kubelet
+&lt;/h3&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;ssh core@openshift-cluster
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo rm /var/lib/kubelet/pki/kubelet-client-current.pem
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo systemctl restart kubelet
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;exit&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;With the cert gone, the kubelet falls back to its bootstrap credentials and submits a Certificate Signing Request (CSR) to the API server.&lt;/p&gt;
+&lt;h3 id="step-2-approve-the-csrs"&gt;Step 2: Approve the CSRs
+&lt;/h3&gt;&lt;p&gt;Back on your workstation:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc get csr -o go-template&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;{{range .items}}{{if not .status}}{{.metadata.name}}{{&amp;#34;\n&amp;#34;}}{{end}}{{end}}&amp;#39;&lt;/span&gt; &lt;span class="p"&gt;|&lt;/span&gt; xargs oc adm certificate approve
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Run this twice, about 30 seconds apart. OpenShift generates two CSRs:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Client CSR:&lt;/strong&gt; lets the kubelet authenticate to the API server.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Serving CSR:&lt;/strong&gt; lets the API server authenticate to the kubelet. This one only appears after the client CSR is approved.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id="step-3-verify"&gt;Step 3: Verify
+&lt;/h3&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc get nodes
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;The node should flip from &lt;code&gt;NotReady&lt;/code&gt; to &lt;code&gt;Ready&lt;/code&gt;. After that, give it 5 to 10 minutes for the operators and pods to come up. You can watch progress with:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;watch &lt;span class="s2"&gt;&amp;#34;oc get clusteroperators | grep -v &amp;#39;True.*False.*False&amp;#39;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;When that output is empty, you are fully recovered.&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;Most of the time this is the only fix you need. If you run it after every boot, you will rarely need the deep recovery below.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr&gt;
+&lt;h2 id="full-recovery-deep-fix"&gt;Full Recovery (Deep Fix)
+&lt;/h2&gt;&lt;p&gt;This is for when the cluster has been running with expired certs for a while. Maybe the cert expired while the cluster was still on, or you booted it and didn&amp;rsquo;t fix the cert straight away. Pods have stale tokens, the API servers have cached bad certs, and the quick fix on its own won&amp;rsquo;t be enough.&lt;/p&gt;
+&lt;h3 id="how-to-know-you-need-this"&gt;How to know you need this
+&lt;/h3&gt;&lt;p&gt;If you have done the quick fix, the node is &lt;code&gt;Ready&lt;/code&gt;, but the operators are still broken after 10 minutes, and you see pods stuck in &lt;code&gt;ContainerCreating&lt;/code&gt; or operators reporting &lt;code&gt;401&lt;/code&gt; errors:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc get clusteroperators &lt;span class="p"&gt;|&lt;/span&gt; grep &lt;span class="m"&gt;401&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc get pods -A &lt;span class="p"&gt;|&lt;/span&gt; grep -c ContainerCreating
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Then you need the deep fix.&lt;/p&gt;
+&lt;h3 id="step-1-fix-the-cert-same-as-the-quick-fix"&gt;Step 1: Fix the cert (same as the quick fix)
+&lt;/h3&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;span class="lnt"&gt;8
+&lt;/span&gt;&lt;span class="lnt"&gt;9
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;ssh core@openshift-cluster
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo rm /var/lib/kubelet/pki/kubelet-client-current.pem
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo systemctl restart kubelet
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;exit&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Approve CSRs (twice, 30 seconds apart)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc get csr -o go-template&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;{{range .items}}{{if not .status}}{{.metadata.name}}{{&amp;#34;\n&amp;#34;}}{{end}}{{end}}&amp;#39;&lt;/span&gt; &lt;span class="p"&gt;|&lt;/span&gt; xargs oc adm certificate approve
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sleep &lt;span class="m"&gt;30&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc get csr -o go-template&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;{{range .items}}{{if not .status}}{{.metadata.name}}{{&amp;#34;\n&amp;#34;}}{{end}}{{end}}&amp;#39;&lt;/span&gt; &lt;span class="p"&gt;|&lt;/span&gt; xargs oc adm certificate approve
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Wait for the node to show &lt;code&gt;Ready&lt;/code&gt;.&lt;/p&gt;
+&lt;h3 id="step-2-restart-the-networking-pods"&gt;Step 2: Restart the networking pods
+&lt;/h3&gt;&lt;p&gt;The OVN and Multus pods have been running with stale service account tokens. Every new pod depends on them for networking, so they get stuck at &lt;code&gt;ContainerCreating&lt;/code&gt; with &amp;ldquo;Unauthorized&amp;rdquo; errors from Multus.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc delete pod -n openshift-ovn-kubernetes --all
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc delete pod -n openshift-multus --all
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;These are managed by a DaemonSet, so they come straight back with fresh credentials. Wait about 60 seconds, then check:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc get pods -A &lt;span class="p"&gt;|&lt;/span&gt; grep -c ContainerCreating
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;The count should start dropping quickly.&lt;/p&gt;
+&lt;h3 id="step-3-restart-the-kube-apiserver-static-pod"&gt;Step 3: Restart the kube-apiserver static pod
+&lt;/h3&gt;&lt;p&gt;The kube-apiserver has been running since before the cert renewal. It has stale front-proxy certs and doesn&amp;rsquo;t trust the kubelet&amp;rsquo;s new serving cert. This causes two problems:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;oc logs&lt;/code&gt; fails with &amp;ldquo;certificate signed by unknown authority&amp;rdquo;.&lt;/li&gt;
+&lt;li&gt;The aggregated API servers (openshift-apiserver, oauth-apiserver) get 401 errors.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;span class="lnt"&gt;8
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;ssh core@openshift-cluster
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo crictl pods --name kube-apiserver -q &lt;span class="p"&gt;|&lt;/span&gt; xargs sudo crictl stopp
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo crictl pods --name kube-apiserver -q &lt;span class="p"&gt;|&lt;/span&gt; xargs sudo crictl rmp
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Also restart kube-controller-manager to refresh CA bundles&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo crictl pods --name kube-controller-manager -q &lt;span class="p"&gt;|&lt;/span&gt; xargs sudo crictl stopp
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo crictl pods --name kube-controller-manager -q &lt;span class="p"&gt;|&lt;/span&gt; xargs sudo crictl rmp
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;exit&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;blockquote&gt;
+&lt;p&gt;You will briefly lose &lt;code&gt;oc&lt;/code&gt; access (around 30 seconds) while the kube-apiserver restarts. This is expected.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;The kubelet recreates these static pods automatically from the manifests on disk.&lt;/p&gt;
+&lt;h3 id="step-4-restart-the-openshift-api-servers"&gt;Step 4: Restart the OpenShift API servers
+&lt;/h3&gt;&lt;p&gt;The OpenShift API servers also started with stale tokens:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc delete pods --all -n openshift-apiserver
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc delete pods --all -n openshift-oauth-apiserver
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc delete pods --all -n openshift-controller-manager
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc delete pods --all -n openshift-authentication
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Give them 2 to 3 minutes to come back as &lt;code&gt;Running&lt;/code&gt;.&lt;/p&gt;
+&lt;h3 id="step-5-restart-the-router"&gt;Step 5: Restart the router
+&lt;/h3&gt;&lt;p&gt;The router (HAProxy) handles all ingress traffic, including the web console and OAuth endpoints:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc delete pods --all -n openshift-ingress
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc delete pods --all -n openshift-console
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h3 id="step-6-verify-everything"&gt;Step 6: Verify everything
+&lt;/h3&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc get clusteroperators &lt;span class="p"&gt;|&lt;/span&gt; grep -v &lt;span class="s2"&gt;&amp;#34;True.*False.*False&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;If this is empty, you are done. Try the web console. If it still shows an OAuth error, open an incognito or private window, since stale cookies from failed login attempts can carry over.&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="the-dependency-chain"&gt;The Dependency Chain
+&lt;/h2&gt;&lt;p&gt;This helps explain why recovery takes time and why the order matters:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;span class="lnt"&gt;8
+&lt;/span&gt;&lt;span class="lnt"&gt;9
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-fallback" data-lang="fallback"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;etcd (static pod, already running)
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -&amp;gt; kube-apiserver (static pod, must trust new certs)
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -&amp;gt; kube-controller-manager (distributes CA bundles)
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -&amp;gt; OVN / Multus (networking, every pod needs this)
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -&amp;gt; openshift-apiserver (aggregated API)
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -&amp;gt; openshift-oauth-apiserver (OAuth tokens)
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -&amp;gt; authentication operator (OAuth server)
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -&amp;gt; router (HAProxy, ingress)
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -&amp;gt; console and OAuth route (login)
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Each layer has to be healthy before the next one works. On an SNO, all of this runs on one machine in sequence, which is why recovery still takes 10 to 15 minutes even after every fix is applied.&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="what-the-scripts-do"&gt;What the Scripts Do
+&lt;/h2&gt;&lt;p&gt;The two scripts from the top of the post are just the manual steps wrapped up with a few sanity checks and some colored output. It is worth reading what they run before you trust them on your cluster.&lt;/p&gt;
+&lt;h3 id="fix-sno-quicksh"&gt;fix-sno-quick.sh
+&lt;/h3&gt;&lt;p&gt;The boot-time recovery script. It checks the cert, deletes it if it has expired, restarts the kubelet, approves the CSRs, and confirms the node is &lt;code&gt;Ready&lt;/code&gt;.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt; 1
+&lt;/span&gt;&lt;span class="lnt"&gt; 2
+&lt;/span&gt;&lt;span class="lnt"&gt; 3
+&lt;/span&gt;&lt;span class="lnt"&gt; 4
+&lt;/span&gt;&lt;span class="lnt"&gt; 5
+&lt;/span&gt;&lt;span class="lnt"&gt; 6
+&lt;/span&gt;&lt;span class="lnt"&gt; 7
+&lt;/span&gt;&lt;span class="lnt"&gt; 8
+&lt;/span&gt;&lt;span class="lnt"&gt; 9
+&lt;/span&gt;&lt;span class="lnt"&gt;10
+&lt;/span&gt;&lt;span class="lnt"&gt;11
+&lt;/span&gt;&lt;span class="lnt"&gt;12
+&lt;/span&gt;&lt;span class="lnt"&gt;13
+&lt;/span&gt;&lt;span class="lnt"&gt;14
+&lt;/span&gt;&lt;span class="lnt"&gt;15
+&lt;/span&gt;&lt;span class="lnt"&gt;16
+&lt;/span&gt;&lt;span class="lnt"&gt;17
+&lt;/span&gt;&lt;span class="lnt"&gt;18
+&lt;/span&gt;&lt;span class="lnt"&gt;19
+&lt;/span&gt;&lt;span class="lnt"&gt;20
+&lt;/span&gt;&lt;span class="lnt"&gt;21
+&lt;/span&gt;&lt;span class="lnt"&gt;22
+&lt;/span&gt;&lt;span class="lnt"&gt;23
+&lt;/span&gt;&lt;span class="lnt"&gt;24
+&lt;/span&gt;&lt;span class="lnt"&gt;25
+&lt;/span&gt;&lt;span class="lnt"&gt;26
+&lt;/span&gt;&lt;span class="lnt"&gt;27
+&lt;/span&gt;&lt;span class="lnt"&gt;28
+&lt;/span&gt;&lt;span class="lnt"&gt;29
+&lt;/span&gt;&lt;span class="lnt"&gt;30
+&lt;/span&gt;&lt;span class="lnt"&gt;31
+&lt;/span&gt;&lt;span class="lnt"&gt;32
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="cp"&gt;#!/bin/bash
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# fix-sno-quick.sh - Quick SNO recovery after boot&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Run this EVERY TIME you start your SNO after it&amp;#39;s been off for &amp;gt;20 hours.&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Usage: ./fix-sno-quick.sh [ssh-host]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;set&lt;/span&gt; -euo pipefail
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nv"&gt;SSH_HOST&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;1&lt;/span&gt;&lt;span class="k"&gt;:-&lt;/span&gt;&lt;span class="nv"&gt;core&lt;/span&gt;&lt;span class="p"&gt;@openshift-cluster&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nv"&gt;GREEN&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;\033[0;32m&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nv"&gt;YELLOW&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;\033[1;33m&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nv"&gt;RED&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;\033[0;31m&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nv"&gt;NC&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;\033[0m&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;info&lt;span class="o"&gt;()&lt;/span&gt; &lt;span class="o"&gt;{&lt;/span&gt; &lt;span class="nb"&gt;echo&lt;/span&gt; -e &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;GREEN&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;&lt;span class="s2"&gt;[OK]&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;NC&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;&lt;span class="s2"&gt; &lt;/span&gt;&lt;span class="nv"&gt;$1&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="o"&gt;}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;warn&lt;span class="o"&gt;()&lt;/span&gt; &lt;span class="o"&gt;{&lt;/span&gt; &lt;span class="nb"&gt;echo&lt;/span&gt; -e &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;YELLOW&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;&lt;span class="s2"&gt;[!]&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;NC&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;&lt;span class="s2"&gt; &lt;/span&gt;&lt;span class="nv"&gt;$1&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="o"&gt;}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;error&lt;span class="o"&gt;()&lt;/span&gt; &lt;span class="o"&gt;{&lt;/span&gt; &lt;span class="nb"&gt;echo&lt;/span&gt; -e &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;RED&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;&lt;span class="s2"&gt;[x]&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;NC&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;&lt;span class="s2"&gt; &lt;/span&gt;&lt;span class="nv"&gt;$1&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="o"&gt;}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Remove the expired cert and restart kubelet&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;info &lt;span class="s2"&gt;&amp;#34;Removing expired kubelet client certificate...&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;ssh &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$SSH_HOST&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;sudo rm -f /var/lib/kubelet/pki/kubelet-client-current.pem&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;info &lt;span class="s2"&gt;&amp;#34;Restarting kubelet...&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;ssh &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$SSH_HOST&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;sudo systemctl restart kubelet&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Approve CSRs in rounds to catch both the client and serving certs&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;info &lt;span class="s2"&gt;&amp;#34;Approving CSRs...&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;for&lt;/span&gt; round in &lt;span class="m"&gt;1&lt;/span&gt; &lt;span class="m"&gt;2&lt;/span&gt; &lt;span class="m"&gt;3&lt;/span&gt; 4&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="k"&gt;do&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; oc get csr -o go-template&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;{{range .items}}{{if not .status}}{{.metadata.name}}{{&amp;#34;\n&amp;#34;}}{{end}}{{end}}&amp;#39;&lt;/span&gt; 2&amp;gt;/dev/null &lt;span class="se"&gt;\
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="p"&gt;|&lt;/span&gt; xargs --no-run-if-empty oc adm certificate approve 2&amp;gt;/dev/null &lt;span class="o"&gt;||&lt;/span&gt; &lt;span class="nb"&gt;true&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; sleep &lt;span class="m"&gt;15&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;done&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Verify the node came back&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;info &lt;span class="s2"&gt;&amp;#34;Checking node status...&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc get nodes
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;info &lt;span class="s2"&gt;&amp;#34;Done. Wait 5-10 minutes for operators to recover.&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;echo&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34; Monitor: watch \&amp;#34;oc get clusteroperators | grep -v &amp;#39;True.*False.*False&amp;#39;\&amp;#34;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;The hosted copy adds cert-expiry detection and a Ready-state wait loop: &lt;a class="link" href="https://rhythmdev.me/scripts/fix-sno-quick.sh" target="_blank" rel="noopener"
+&gt;fix-sno-quick.sh&lt;/a&gt;.&lt;/p&gt;
+&lt;h3 id="fix-sno-fullsh"&gt;fix-sno-full.sh
+&lt;/h3&gt;&lt;p&gt;The deep recovery script. It runs everything above, then restarts the networking pods, the static pods, the API servers, and the router. Use it when the quick fix doesn&amp;rsquo;t fully recover the cluster after 10 minutes. It is long, so rather than paste the whole thing here, you can read or download it directly: &lt;a class="link" href="https://rhythmdev.me/scripts/fix-sno-full.sh" target="_blank" rel="noopener"
+&gt;fix-sno-full.sh&lt;/a&gt;.&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="preventing-this"&gt;Preventing This
+&lt;/h2&gt;&lt;p&gt;The 24-hour cert window means any shutdown longer than about 20 hours will trigger this. A few options:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;Don&amp;rsquo;t leave it off for more than 20 hours.&lt;/strong&gt; If you&amp;rsquo;re doing daily lab work, shut down at night and boot in the morning, and you stay inside the window.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;Run the quick fix script on every boot.&lt;/strong&gt; It takes about 60 seconds and quickly becomes muscle memory. This is what I do.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;Automate CSR approval&lt;/strong&gt; with a systemd unit on the node that watches for and approves pending CSRs on startup. More work to set up, but hands-free.&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;For a learning lab, option 2 is the one I would go with.&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="key-takeaways"&gt;Key Takeaways
+&lt;/h2&gt;&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Kubelet certificates are short-lived (around 24h) and rotate on their own.&lt;/strong&gt; If they expire, the kubelet becomes &lt;code&gt;system:anonymous&lt;/code&gt; and the cluster cascades into failure.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;CSRs come in pairs.&lt;/strong&gt; The client cert first, the serving cert second. Approve both.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Static pods&lt;/strong&gt; (etcd, kube-apiserver) are managed by the kubelet from manifests on disk. Restart them with &lt;code&gt;crictl&lt;/code&gt;, not &lt;code&gt;oc delete&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;The order matters.&lt;/strong&gt; Networking, then API servers, then authentication, then router, then console.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;ContainerCreating&lt;/code&gt; usually means networking is broken.&lt;/strong&gt; Restart OVN and Multus.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;401 errors from operators mean the kube-apiserver has stale certs.&lt;/strong&gt; Restart the static pod.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Stale browser cookies&lt;/strong&gt; can fake an auth failure even when the cluster is healthy. Try incognito.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Once you have been through this a couple of times it stops being intimidating, and the quick fix turns into a routine part of booting the lab.&lt;/p&gt;</description></item><item><title>Setting Up a Single Node OpenShift Lab on Fedora</title><link>https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/</link><pubDate>Sat, 18 Jul 2026 00:00:00 +0000</pubDate><guid>https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/</guid><description>&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/cluster-details.png" alt="Featured image of post Setting Up a Single Node OpenShift Lab on Fedora" /&gt;&lt;p&gt;Running a Single Node OpenShift (SNO) cluster locally on KVM/QEMU is doable, but the VM setup matters. If the configuration is off, it usually fails quietly or runs out of resources.&lt;/p&gt;
+&lt;p&gt;This guide shows how I set up the cluster with Red Hat&amp;rsquo;s Assisted Installer, the VM tweaks OpenShift CoreOS (RHCOS) needed on a Fedora host, and the local DNS entries that let me actually reach the cluster.&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="1-generating-the-discovery-iso"&gt;1. Generating the Discovery ISO
+&lt;/h2&gt;&lt;p&gt;The most reliable way to deploy a KVM-based SNO cluster is using the Red Hat Hybrid Cloud Console.&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;Navigate to &lt;a class="link" href="https://cloud.redhat.com" target="_blank" rel="noopener"
+&gt;cloud.redhat.com&lt;/a&gt; and log in.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Go to &lt;strong&gt;OpenShift &amp;gt; Clusters &amp;gt; Create Cluster&lt;/strong&gt;.
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/create-cluster.png"
+width="3488"
+height="1782"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/create-cluster_hu_1f13c3d349a77390.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/create-cluster_hu_da7569087db63a60.png 1024w"
+loading="lazy"
+alt="Clusters list in the Red Hat Hybrid Cloud Console with the Create cluster button"
+class="gallery-image"
+data-flex-grow="195"
+data-flex-basis="469px"
+&gt;&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Select the &lt;strong&gt;Datacenter&lt;/strong&gt; tab and on &lt;strong&gt;Assisted Installer&lt;/strong&gt; click on &lt;strong&gt;create cluster&lt;/strong&gt;.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Configure the initial cluster details:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Cluster Name:&lt;/strong&gt; &lt;code&gt;local-sno&lt;/code&gt; (or your preferred name).&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Base Domain:&lt;/strong&gt; &lt;code&gt;example.com&lt;/code&gt; (or your preferred domain).&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Install single node OpenShift (SNO):&lt;/strong&gt; Ensure this box is checked.
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/cluster-details.png"
+width="3472"
+height="2822"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/cluster-details_hu_70679df080d8a75f.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/cluster-details_hu_8c0164a3a4af1e20.png 1024w"
+loading="lazy"
+alt="Assisted Installer cluster details form with the cluster name, base domain, and Single Node OpenShift selected"
+class="gallery-image"
+data-flex-grow="123"
+data-flex-basis="295px"
+&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Click next and select any operators you want, I am skipping any additional operators right now as I won&amp;rsquo;t have enough ram for my setup.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Click next and in host discovery tab select &lt;strong&gt;add a host&lt;/strong&gt;. Select &lt;strong&gt;Full image file&lt;/strong&gt; as I have noticed it&amp;rsquo;s the most stable for these kinds of setups
+&lt;strong&gt;Inject your SSH Key:&lt;/strong&gt; During the wizard configuration, ensure you paste your host machine&amp;rsquo;s public SSH key (usually &lt;code&gt;~/.ssh/id_rsa.pub&lt;/code&gt;). If you skip this, you will be permanently locked out of the &lt;code&gt;core&lt;/code&gt; user backend later.
+If you don&amp;rsquo;t have a key generated then you can run the following command on the host machine&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;ssh-keygen
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/provisioning-type.png"
+width="1992"
+height="1616"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/provisioning-type_hu_1220c622a77684dc.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/provisioning-type_hu_d6f21aa6c7fe3cd6.png 1024w"
+loading="lazy"
+alt="Add host dialog with the provisioning type set to Full image file and the SSH public key field"
+class="gallery-image"
+data-flex-grow="123"
+data-flex-basis="295px"
+&gt;&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Generate the &lt;strong&gt;Discovery ISO&lt;/strong&gt;. You will mount this ISO to your virtual machine so it can boot and register itself with the Red Hat console.&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;blockquote&gt;
+&lt;p&gt;If the downloaded file is exactly 1024 MB then the file downloaded might be corrupted, make sure to use any kind of download manager as usually no OpenShift image is exactly 1024 MB&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;ol start="8"&gt;
+&lt;li&gt;If your download speed is super slow then I suggest using a download manager like free download manager &lt;a class="link" href="https://www.freedownloadmanager.org/" target="_blank" rel="noopener"
+&gt;freedownloadmanager.org&lt;/a&gt;
+and copy the &lt;strong&gt;Discovery ISO URL&lt;/strong&gt; to the download manager for a faster speed.
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/discovery-iso.png"
+width="1992"
+height="1616"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/discovery-iso_hu_34c4aecc9e705915.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/discovery-iso_hu_4eb91774ad3f1bbc.png 1024w"
+loading="lazy"
+alt="Discovery ISO ready dialog showing the Discovery ISO URL and download command"
+class="gallery-image"
+data-flex-grow="123"
+data-flex-basis="295px"
+&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;hr&gt;
+&lt;h2 id="2-virtual-machine-provisioning--configuration"&gt;2. Virtual Machine Provisioning &amp;amp; Configuration
+&lt;/h2&gt;&lt;p&gt;Creating a standard &amp;ldquo;Next -&amp;gt; Next -&amp;gt; Finish&amp;rdquo; VM in &lt;code&gt;virt-manager&lt;/code&gt; will fail for OpenShift. You must carefully define the hardware limits and edit the underlying XML before the first boot.&lt;/p&gt;
+&lt;h3 id="step-21-initial-hardware-allocation"&gt;Step 2.1: Initial Hardware Allocation
+&lt;/h3&gt;&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;CPU:&lt;/strong&gt; 8 - 16 vCPUs. &lt;em&gt;(Note: If your device allows, select more during installation as it can help speed up the process.)&lt;/em&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;RAM:&lt;/strong&gt; 16 GB minimum. &lt;em&gt;(Note: Initial lab attempts using 16 GB of RAM will work, but if you want to run multiple applications at the same time then the ram will become a bottleneck.)&lt;/em&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Storage:&lt;/strong&gt; 150 GB &lt;code&gt;qcow2&lt;/code&gt; sparse image.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Network:&lt;/strong&gt; Default NAT virtual network (&lt;code&gt;virbr0&lt;/code&gt;).&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Boot Media:&lt;/strong&gt; Attach the Discovery ISO downloaded in Step 1 if not yet attached.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;blockquote&gt;
+&lt;p&gt;For &lt;strong&gt;Operating System select&lt;/strong&gt; either rhel9 or 10 unknown or the one at the bottom of the list
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/vm-os-selection.png"
+width="1100"
+height="1166"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/vm-os-selection_hu_e7accf710b4236fb.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/vm-os-selection_hu_9fd8734c47ddb010.png 1024w"
+loading="lazy"
+alt="New VM wizard choosing the Discovery ISO install media and Red Hat Enterprise Linux 9 as the operating system"
+class="gallery-image"
+data-flex-grow="94"
+data-flex-basis="226px"
+&gt;
+Select &lt;strong&gt;customize configuration before install&lt;/strong&gt; as there are some additional configurations that need to be done if you want to customize anything
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/vm-customize-config.png"
+width="1100"
+height="1166"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/vm-customize-config_hu_5ba873e7d1daa0c1.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/vm-customize-config_hu_67299b4e341f0957.png 1024w"
+loading="lazy"
+alt="New VM wizard summary with Customize configuration before install checked"
+class="gallery-image"
+data-flex-grow="94"
+data-flex-basis="226px"
+&gt;&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id="3-installation-and-booting"&gt;3. Installation and Booting
+&lt;/h2&gt;&lt;ol&gt;
+&lt;li&gt;Power on the virtual machine in &lt;code&gt;virt-manager&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;The VM will boot from the Discovery ISO and load the live CoreOS environment into memory.&lt;/li&gt;
+&lt;li&gt;Return to your browser at &lt;code&gt;cloud.redhat.com&lt;/code&gt;. Within a few minutes, your VM will appear in the web console as a discovered host with a &lt;code&gt;Ready&lt;/code&gt; status.
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/host-discovery-ready.png"
+width="3760"
+height="1504"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/host-discovery-ready_hu_3d757fed220f8f0d.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/host-discovery-ready_hu_1fec5da44e3fdc95.png 1024w"
+loading="lazy"
+alt="Assisted Installer host discovery tab showing the discovered host with a Ready status in the host inventory"
+class="gallery-image"
+data-flex-grow="250"
+data-flex-basis="600px"
+&gt;&lt;/li&gt;
+&lt;li&gt;Verify the network settings in the web UI (ensure it picked up an IP address from your KVM NAT network, usually in the &lt;code&gt;192.168.122.x&lt;/code&gt; range).&lt;/li&gt;
+&lt;li&gt;Click &lt;strong&gt;Install Cluster&lt;/strong&gt;.
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/review-and-create.png"
+width="2476"
+height="2402"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/review-and-create_hu_c3f188b6b269a3e5.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/review-and-create_hu_70979b39daa61e29.png 1024w"
+loading="lazy"
+alt="Review and create page showing the cluster summary and the Install cluster button"
+class="gallery-image"
+data-flex-grow="103"
+data-flex-basis="247px"
+&gt;&lt;/li&gt;
+&lt;li&gt;The installer will format your &lt;code&gt;qcow2&lt;/code&gt; drive, pull down the OpenShift payload, and initiate a reboot.
+&lt;ul&gt;
+&lt;li&gt;&lt;em&gt;Important:&lt;/em&gt; Remove the Discovery ISO from the virtual CD-ROM drive during this reboot so it boots directly from the hard drive.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;To note:&lt;/strong&gt;
+Do not take a VM snapshot while the cluster is still installing or starting up. Taking a snapshot while OpenShift is in an incomplete state will corrupt the etcd database upon restoration. Wait until the cluster finishes entirely (30-45 minutes) and &lt;code&gt;oc get nodes&lt;/code&gt; reports a solid &lt;code&gt;Ready&lt;/code&gt; status before taking your first snapshot.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr&gt;
+&lt;h2 id="4-local-dns-resolution-etchosts"&gt;4. Local DNS Resolution (/etc/hosts)
+&lt;/h2&gt;&lt;p&gt;Because this is a local KVM setup without a dedicated DNS server, your Fedora host does not know how to resolve the OpenShift API or web console URLs to your virtual machine&amp;rsquo;s IP address.&lt;/p&gt;
+&lt;p&gt;You must manually map the cluster routes on your host machine.&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;Find the IP address of your OpenShift VM (e.g., &lt;code&gt;192.168.122.50&lt;/code&gt;).&lt;/li&gt;
+&lt;li&gt;Edit the &lt;code&gt;/etc/hosts&lt;/code&gt; file on your Fedora host:
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo nano /etc/hosts
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;Append the following entries. Substitute the IP address with your VM&amp;rsquo;s IP, and update the domain if you did not use &lt;code&gt;local-sno.example.com&lt;/code&gt;:
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;span class="lnt"&gt;8
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-text" data-lang="text"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;# OpenShift SNO Local Lab
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;192.168.122.50 api.local-sno.example.com
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;192.168.122.50 api-int.local-sno.example.com
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;192.168.122.50 oauth-openshift.apps.local-sno.example.com
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;192.168.122.50 console-openshift-console.apps.local-sno.example.com
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;# Catch-all for other apps (Note: /etc/hosts does not support true wildcards,
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;# so you must add specific app routes here as you deploy them)
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;Save and exit.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;You can now open a web browser on your Fedora host, navigate to &lt;code&gt;https://console-openshift-console.apps.local-sno.example.com&lt;/code&gt;, and log in using the &lt;code&gt;kubeadmin&lt;/code&gt; credentials provided by the Assisted Installer!&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="5-debug-guide"&gt;5. Debug Guide:
+&lt;/h2&gt;&lt;p&gt;If you ever lose web console access or things go wrong with the node, you can use the CLI to break directly into the CoreOS host file system.&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;Assuming you configured your &lt;code&gt;KUBECONFIG&lt;/code&gt; or logged in via &lt;code&gt;oc login&lt;/code&gt;, spawn a privileged debug pod on the node:
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc debug node/local-sno
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;Change your root directory to the actual host filesystem:
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;chroot /host
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;From here, you are running as &lt;code&gt;root&lt;/code&gt; on the actual virtual machine. You can inspect kernel logs (&lt;code&gt;dmesg&lt;/code&gt;), check loaded network modules, manage &lt;code&gt;systemd&lt;/code&gt; services, and interact directly with the underlying &lt;code&gt;crio&lt;/code&gt; container runtime.&lt;/p&gt;</description></item><item><title>Self-Hosting Google Photos with Immich on RHEL and Podman</title><link>https://rhythmdev.me/p/self-hosting-google-photos-with-immich-on-rhel-and-podman/</link><pubDate>Tue, 17 Mar 2026 00:00:00 +0000</pubDate><guid>https://rhythmdev.me/p/self-hosting-google-photos-with-immich-on-rhel-and-podman/</guid><description>&lt;img src="https://rhythmdev.me/p/self-hosting-google-photos-with-immich-on-rhel-and-podman/thumbnail.png" alt="Featured image of post Self-Hosting Google Photos with Immich on RHEL and Podman" /&gt;&lt;ul&gt;
+&lt;li&gt;Showcase video: &lt;a class="link" href="https://www.youtube.com/watch?v=FrCaie-2YKk" target="_blank" rel="noopener"
+&gt;https://www.youtube.com/watch?v=FrCaie-2YKk&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;Introductions&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;I wanted to set up a simple self-hosted photo backup server with Immich on RHEL.&lt;/p&gt;
+&lt;p&gt;Most Immich guides are written for setups that do not have to deal with RHEL-specific SELinux behavior. The installation itself is not too bad, but getting the permissions right can be frustrating if you have never done it before.&lt;/p&gt;
+&lt;p&gt;This post walks through how to run Immich on RHEL with rootless Podman and Tailscale, with the extra steps needed to make it work cleanly.&lt;/p&gt;
+&lt;h2 id="1-download-the-immich-files-default-setup"&gt;1. Download the Immich Files (Default Setup)
+&lt;/h2&gt;&lt;p&gt;First, create the working directory and pull down the official Immich deployment files.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt; 1
+&lt;/span&gt;&lt;span class="lnt"&gt; 2
+&lt;/span&gt;&lt;span class="lnt"&gt; 3
+&lt;/span&gt;&lt;span class="lnt"&gt; 4
+&lt;/span&gt;&lt;span class="lnt"&gt; 5
+&lt;/span&gt;&lt;span class="lnt"&gt; 6
+&lt;/span&gt;&lt;span class="lnt"&gt; 7
+&lt;/span&gt;&lt;span class="lnt"&gt; 8
+&lt;/span&gt;&lt;span class="lnt"&gt; 9
+&lt;/span&gt;&lt;span class="lnt"&gt;10
+&lt;/span&gt;&lt;span class="lnt"&gt;11
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Create the directory for Immich&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;mkdir ./immich-app
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Navigate into the directory&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;cd&lt;/span&gt; ./immich-app
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Download the docker-compose.yml file&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;wget -O docker-compose.yml https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Download the example .env file&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;wget -O .env https://github.com/immich-app/immich/releases/latest/download/example.env
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="2-install-podman-compose"&gt;2. Install podman-compose
+&lt;/h2&gt;&lt;p&gt;Now we need a way to run this compose file. RHEL keeps its official repositories incredbly strict for enterprise stability. To get community-standard tools like &lt;code&gt;podman-compose&lt;/code&gt;, we have to switch to root, enable CodeReady Builder (CRB), and get into Fedora&amp;rsquo;s Extra Packages for Enterprise Linux (EPEL).&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt; 1
+&lt;/span&gt;&lt;span class="lnt"&gt; 2
+&lt;/span&gt;&lt;span class="lnt"&gt; 3
+&lt;/span&gt;&lt;span class="lnt"&gt; 4
+&lt;/span&gt;&lt;span class="lnt"&gt; 5
+&lt;/span&gt;&lt;span class="lnt"&gt; 6
+&lt;/span&gt;&lt;span class="lnt"&gt; 7
+&lt;/span&gt;&lt;span class="lnt"&gt; 8
+&lt;/span&gt;&lt;span class="lnt"&gt; 9
+&lt;/span&gt;&lt;span class="lnt"&gt;10
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Switch to root&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;su -
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Enable CRB and install EPEL&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;subscription-manager repos --enable codeready-builder-for-rhel-10-&lt;span class="k"&gt;$(&lt;/span&gt;arch&lt;span class="k"&gt;)&lt;/span&gt;-rpms
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;logout&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Install podman-compose&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo dnf install podman-compose
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Tip: If the CRB repository does not work, you can always bypass it by installing &lt;code&gt;pip&lt;/code&gt; and installing &lt;code&gt;podman-compose&lt;/code&gt; through Python instead.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo dnf install python3-pip
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;pip3 install --user podman-compose
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="3-edit-selinux-contexts"&gt;3. Edit SELinux Contexts
+&lt;/h2&gt;&lt;p&gt;Next, edit the &lt;code&gt;docker-compose.yml&lt;/code&gt; file. Because RHEL uses SELinux, it blocks containers from touching host files. We have to explicitly add permissions to the volume mounts inside the file.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;vim docker-compose.yml
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;span class="lnt"&gt;8
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;19&lt;/span&gt; volumes:
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;20&lt;/span&gt; &lt;span class="c1"&gt;# Do not edit the next line. If you want to change the media storage location on your system, edit the value of UPLOAD_LOCATION in th e .env file&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;21&lt;/span&gt; - &lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;UPLOAD_LOCATION&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;:/data:z
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;22&lt;/span&gt; - /etc/localtime:/etc/localtime:ro
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;67&lt;/span&gt; volumes:
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;68&lt;/span&gt; &lt;span class="c1"&gt;# Do not edit the next line. If you want to change the database storage location on your system, edit the value of DB_DATA_LOCATION i n the .env file&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="m"&gt;69&lt;/span&gt; - &lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;DB_DATA_LOCATION&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;:/var/lib/postgresql/data:z
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;When you are defining your volume paths in the compose file, append the correct SELinux labels:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Add a lowercase &lt;code&gt;:z&lt;/code&gt; to your photo uploads and database volume folder so multiple Immich containers can share that directory without locking each other out.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id="4-fire-it-up"&gt;4. Fire It Up
+&lt;/h2&gt;&lt;p&gt;With the files configured, start the stack in detached mode.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman-compose up -d
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="5-fix-postgresql-permissions-for-rootless-podman"&gt;5. Fix PostgreSQL Permissions for Rootless Podman
+&lt;/h2&gt;&lt;p&gt;If the database container fails with permission errors under rootless Podman, fix the ownership on the host and restart the stack. Because we are running this securely as a normal user instead of &lt;code&gt;root&lt;/code&gt;, the host machine doesn&amp;rsquo;t recognize the container&amp;rsquo;s internal PostgreSQL user. We have to translate those permissions.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman unshare chown -R 999:999 ./postgres/
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;The &lt;code&gt;podman unshare&lt;/code&gt; command drops us into the container&amp;rsquo;s user namespace. It maps the container&amp;rsquo;s internal database user to a large, unprivileged user ID on the host machine, fixing the permission-denied errors without compromising security.&lt;/p&gt;
+&lt;h2 id="6-secure-remote-access-with-tailscale"&gt;6. Secure Remote Access with Tailscale
+&lt;/h2&gt;&lt;p&gt;The server is running, but how do you access it securely without exposing ports to the internet? Tailscale makes this effortless.&lt;/p&gt;
+&lt;p&gt;Install Tailscale using their official script:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;curl -fsSL https://tailscale.com/install.sh &lt;span class="p"&gt;|&lt;/span&gt; sh
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Once installed, bring the node online:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo tailscale up
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Copy the authentication link provided in the terminal, paste it into your browser, and authenticate. That&amp;rsquo;s it. Anything connected to your Tailscale mesh network can now access your new Immich instance securely.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Convert Containers Into a Service with Quadlet&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;If you want to convert your containers into a proper user service, follow these steps. With the following steps, you can have immich auto start if the system restarts and so on.&lt;/p&gt;
+&lt;h2 id="7-transition-to-quadlet-kubernetes-style"&gt;7. Transition to Quadlet (Kubernetes Style)
+&lt;/h2&gt;&lt;p&gt;We can use Quadlet to treat the containers as a native systemd service. First, generate a Kubernetes YAML blueprint from the stack.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Start the stack once to group services into a Pod&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman-compose up -d
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Export the running Pod to a K8s manifest&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman kube generate pod_immich &amp;gt; ~/immich-app/immich.yaml
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman-compose down
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="8-networking-in-a-pod"&gt;8. Networking in a Pod
+&lt;/h2&gt;&lt;p&gt;Inside a Pod, containers share the same network stack. That means Immich needs to resolve &lt;code&gt;database&lt;/code&gt; and &lt;code&gt;redis&lt;/code&gt; to &lt;code&gt;127.0.0.1&lt;/code&gt;. Add this to &lt;code&gt;immich.yaml&lt;/code&gt;.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-yaml" data-lang="yaml"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nt"&gt;spec&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;hostAliases&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;- &lt;span class="nt"&gt;ip&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;127.0.0.1&amp;#34;&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;hostnames&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;- &lt;span class="s2"&gt;&amp;#34;database&amp;#34;&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;- &lt;span class="s2"&gt;&amp;#34;redis&amp;#34;&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="9-configure-quadlet"&gt;9. Configure Quadlet
+&lt;/h2&gt;&lt;p&gt;Move your manifest to the systemd generator directory and create the &lt;code&gt;.kube&lt;/code&gt; file.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;mkdir -p ~/.config/containers/systemd/
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;mv ~/immich-app/immich.yaml ~/.config/containers/systemd/
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Create the service definition&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;vim ~/.config/containers/systemd/immich.kube
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;&lt;code&gt;immich.kube&lt;/code&gt; content:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;span class="lnt"&gt;8
+&lt;/span&gt;&lt;span class="lnt"&gt;9
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-ini" data-lang="ini"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;[Unit]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;Description&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;Immich Kubernetes Pod Quadlet&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;After&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;network-online.target&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;[Kube]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;Yaml&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;immich.yaml&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;[Install]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;WantedBy&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;default.target&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="10-enable-and-boot"&gt;10. Enable and Boot
+&lt;/h2&gt;&lt;p&gt;Enable lingering so the service keeps running even when you are not logged in, then start it.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo loginctl enable-linger &lt;span class="nv"&gt;$USER&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user daemon-reload
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user start immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="11-verification"&gt;11. Verification
+&lt;/h2&gt;&lt;p&gt;Check logs with:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;journalctl --user -xeu immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user status immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;If you see &lt;code&gt;database system is ready&lt;/code&gt;, the service is up.&lt;/p&gt;
+&lt;h2 id="12-safe-upgrade-if-you-followed-this-guide"&gt;12. Safe Upgrade (If You Followed This Guide)
+&lt;/h2&gt;&lt;p&gt;This flow is designed to avoid breaking your rootless Podman + Quadlet setup and keep your database safe.&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;Check the Immich release notes for breaking changes.&lt;/li&gt;
+&lt;li&gt;Stop the running service.&lt;/li&gt;
+&lt;li&gt;Pull the latest images.&lt;/li&gt;
+&lt;li&gt;Regenerate the Pod spec if the compose file changed.&lt;/li&gt;
+&lt;li&gt;Re-apply permissions if the database fails to start.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id="1-read-the-release-notes"&gt;1) Read the release notes
+&lt;/h3&gt;&lt;p&gt;Go to the Immich GitHub releases page and scan for any migration notes or changes to environment variables.&lt;/p&gt;
+&lt;h3 id="2-stop-the-running-service"&gt;2) Stop the running service
+&lt;/h3&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user stop immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h3 id="3-pull-the-latest-images"&gt;3) Pull the latest images
+&lt;/h3&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman-compose pull
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h3 id="4-regenerate-the-pod-if-the-compose-file-changed"&gt;4) Regenerate the Pod (if the compose file changed)
+&lt;/h3&gt;&lt;p&gt;If you updated &lt;code&gt;docker-compose.yml&lt;/code&gt; or &lt;code&gt;.env&lt;/code&gt;, regenerate the manifest and re-apply the Quadlet file.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman-compose up -d
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman kube generate pod_immich &amp;gt; ~/immich-app/immich.yaml
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman-compose down
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user daemon-reload
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h3 id="5-start-the-service"&gt;5) Start the service
+&lt;/h3&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user start immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h3 id="6-fix-database-permissions-if-needed"&gt;6) Fix database permissions if needed
+&lt;/h3&gt;&lt;p&gt;If the database fails to start due to permission errors, re-apply the rootless ownership mapping and restart.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;podman unshare chown -R 999:999 ./postgres/
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user restart immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h3 id="7-verify"&gt;7) Verify
+&lt;/h3&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;journalctl --user -xeu immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl --user status immich.service
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;</description></item><item><title>Automating an NGINX Reverse Proxy with Ansible</title><link>https://rhythmdev.me/p/automating-an-nginx-reverse-proxy-with-ansible/</link><pubDate>Sun, 15 Feb 2026 00:00:00 +0000</pubDate><guid>https://rhythmdev.me/p/automating-an-nginx-reverse-proxy-with-ansible/</guid><description>&lt;img src="https://rhythmdev.me/p/automating-an-nginx-reverse-proxy-with-ansible/automate-nginx-reverse-proxy.png" alt="Featured image of post Automating an NGINX Reverse Proxy with Ansible" /&gt;&lt;p&gt;This writeup documents my Ansible-based reverse proxy automation and the demo video where the playbook runs end-to-end.&lt;/p&gt;
+&lt;h2 id="resources"&gt;Resources
+&lt;/h2&gt;&lt;ul&gt;
+&lt;li&gt;Code: &lt;a class="link" href="https://github.com/Rhythm1337/ansible-dynamic-proxy" target="_blank" rel="noopener"
+&gt;https://github.com/Rhythm1337/ansible-dynamic-proxy&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Demo video: &lt;a class="link" href="https://www.youtube.com/watch?v=FrCaie-2YKk" target="_blank" rel="noopener"
+&gt;https://www.youtube.com/watch?v=FrCaie-2YKk&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Handwritten notes (PDF): &lt;a class="link" href="https://github.com/Rhythm1337/ansible-dynamic-proxy/blob/master/Handwritten.pdf" target="_blank" rel="noopener"
+&gt;https://github.com/Rhythm1337/ansible-dynamic-proxy/blob/master/Handwritten.pdf&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id="the-problem"&gt;The Problem
+&lt;/h2&gt;&lt;p&gt;The goal was to obfuscate a public-facing business server located on-premise. This server runs multiple different applications and generates both inbound and outbound traffic. To date, approximately 20 TB of bandwidth has been transferred.&lt;/p&gt;
+&lt;h2 id="the-solution-reverse-proxies"&gt;The Solution: Reverse Proxies
+&lt;/h2&gt;&lt;p&gt;NGINX was chosen as the solution because it offers built-in load balancing, performance optimization, and flexibility.&lt;/p&gt;
+&lt;h2 id="the-technical-setup-and-thought-process"&gt;The Technical Setup and Thought Process
+&lt;/h2&gt;&lt;p&gt;The infrastructure is split between a public Cloud Proxy and an isolated Home Server.&lt;/p&gt;
+&lt;p&gt;&lt;img src="https://rhythmdev.me/p/automating-an-nginx-reverse-proxy-with-ansible/handwritten-note.jpg"
+width="1240"
+height="1755"
+srcset="https://rhythmdev.me/p/automating-an-nginx-reverse-proxy-with-ansible/handwritten-note_hu_1b895fa8dec610dc.jpg 480w, https://rhythmdev.me/p/automating-an-nginx-reverse-proxy-with-ansible/handwritten-note_hu_63c299238448a970.jpg 1024w"
+loading="lazy"
+alt="Home Server diagram"
+class="gallery-image"
+data-flex-grow="70"
+data-flex-basis="169px"
+&gt;&lt;/p&gt;
+&lt;h3 id="cloud-proxy-public"&gt;Cloud Proxy (Public)
+&lt;/h3&gt;&lt;ul&gt;
+&lt;li&gt;Handles public access via the domain and cloud IP.&lt;/li&gt;
+&lt;li&gt;Runs NGINX.&lt;/li&gt;
+&lt;li&gt;Traffic is directed from port 2222 to the Home Server IP on port 44690.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id="home-server-isolated"&gt;Home Server (Isolated)
+&lt;/h3&gt;&lt;ul&gt;
+&lt;li&gt;Router: Port 44690 is open.&lt;/li&gt;
+&lt;li&gt;Firewall: Blocks all connections except for the Cloud Proxy.&lt;/li&gt;
+&lt;li&gt;NGINX: Proxy Protocol is enabled. It listens on port 44690 and passes traffic to the internal DHCP IP 192.168.0.1:2222.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Note on container security: Traffic is not sent directly to the applications because they run in Docker containers. Applying firewall rules directly to these containers would cause them to break. Using the same ports on both the Business Proxy and Home Server is an intentional choice for obfuscation.&lt;/p&gt;
+&lt;h2 id="addressing-dynamic-ips-with-ansible"&gt;Addressing Dynamic IPs with Ansible
+&lt;/h2&gt;&lt;p&gt;Because the machine is hosted on-premise at a business location for security reasons, a static IP was not possible. The IP address changed frequently, creating a connection issue. The solution was Ansible, an open-source automation tool used to automate various IT processes.&lt;/p&gt;
+&lt;h2 id="the-automation-approach"&gt;The Automation Approach
+&lt;/h2&gt;&lt;ul&gt;
+&lt;li&gt;Environment setup: Configure SSH keys and develop the Ansible playbook.&lt;/li&gt;
+&lt;li&gt;On-premise execution:
+&lt;ul&gt;
+&lt;li&gt;Gather facts from the on-premise machine.&lt;/li&gt;
+&lt;li&gt;Retrieve the current IP address and save it as a fact.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;Cloud Proxy execution:
+&lt;ul&gt;
+&lt;li&gt;Gather facts from the Cloud Proxy.&lt;/li&gt;
+&lt;li&gt;Ensure all necessary packages exist.&lt;/li&gt;
+&lt;li&gt;Retrieve the saved IP of the on-premise machine.&lt;/li&gt;
+&lt;li&gt;Update all configuration files with the new IP.&lt;/li&gt;
+&lt;li&gt;Reload NGINX to apply changes.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Key detail: The playbook is designed so that if the proxy machine is ever changed, no extra setup is required beyond configuring the SSH keys.&lt;/p&gt;
+&lt;h2 id="closing-note"&gt;Closing Note
+&lt;/h2&gt;&lt;p&gt;&amp;ldquo;If you have read this far, thank you from the bottom of my heart for sticking with me. I truly appreciate you being here. :D&amp;rdquo;&lt;/p&gt;</description></item><item><title>Archives</title><link>https://rhythmdev.me/archives/</link><pubDate>Sun, 06 Mar 2022 00:00:00 +0000</pubDate><guid>https://rhythmdev.me/archives/</guid><description/></item><item><title>Links</title><link>https://rhythmdev.me/links/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://rhythmdev.me/links/</guid><description>&lt;!--
+To use this feature, add `links` section to frontmatter.
+This page's frontmatter:
+```yaml
+links:
+- title: GitHub
+description: GitHub is the world's largest software development platform.
+website: https://github.com
+image: https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png
+- title: TypeScript
+description: TypeScript is a typed superset of JavaScript that compiles to plain JavaScript.
+website: https://www.typescriptlang.org
+image: ts-logo-128.jpg
+```
+`image` field accepts both local and external images.
+--&gt;</description></item><item><title>Rhythm Chaudhary</title><link>https://rhythmdev.me/about/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://rhythmdev.me/about/</guid><description>&lt;div class="about-page"&gt;
+&lt;section class="ap-hero"&gt;
+&lt;h1 class="ap-hero__name"&gt;Rhythm Chaudhary&lt;/h1&gt;
+&lt;p class="ap-hero__tagline"&gt;
+An enthusiast in well-architected processes and automation tools, using them to tie together cloud infrastructure and containerisation efforts to make things happen.
+&lt;/p&gt;
+&lt;div class="ap-hero__ctas"&gt;
+&lt;a class="ap-hero__resume" href="https://rhythmdev.me/files/Rhythm_Chaudhary_Resume.pdf" target="_blank" rel="noopener"&gt;View &amp;amp; Download Résumé →&lt;/a&gt;
+&lt;a class="ap-hero__cta-cert" href="#certifications"&gt;View Certifications ↓&lt;/a&gt;
+&lt;/div&gt;
+&lt;div class="ap-hero__contact"&gt;
+&lt;a href="mailto:rhythm@rhythmdev.me"&gt;rhythm@rhythmdev.me&lt;/a&gt;
+&lt;span class="ap-hero__sep" aria-hidden="true"&gt;·&lt;/span&gt;
+&lt;a href="tel:+919232087980"&gt;+91 92320 87980&lt;/a&gt;
+&lt;span class="ap-hero__sep" aria-hidden="true"&gt;·&lt;/span&gt;
+&lt;a href="https://linkedin.com/in/rhythmchaudhary" target="_blank" rel="noopener"&gt;linkedin.com/in/rhythmchaudhary&lt;/a&gt;
+&lt;/div&gt;
+&lt;/section&gt;
+&lt;section class="ap-about"&gt;
+&lt;h2 class="ap-h2"&gt;About Me&lt;/h2&gt;
+&lt;p&gt;I started using Linux pretty young and it genuinely got me interested. The more I learned, the more I wanted to dig deeper. A mentor of mine who was Red Hat certified pointed me toward the Red Hat track, and that's what set the direction.&lt;/p&gt;
+&lt;p&gt;Since then I've been working my way through it properly: hands-on labs, real certs, and actually managing servers, cloud environments, and deployments along the way.&lt;/p&gt;
+&lt;/section&gt;
+&lt;section class="ap-skills"&gt;
+&lt;h2 class="ap-h2-sm"&gt;What I'm Into&lt;/h2&gt;
+&lt;div class="ap-skills__grid"&gt;
+&lt;div class="ap-skill"&gt;
+&lt;div class="ap-skill__title"&gt;Languages &amp;amp; Scripting&lt;/div&gt;
+&lt;div class="ap-skill__tags"&gt;
+&lt;span class="ap-tag"&gt;Python&lt;/span&gt;
+&lt;span class="ap-tag"&gt;Bash&lt;/span&gt;
+&lt;span class="ap-tag"&gt;SQL&lt;/span&gt;
+&lt;span class="ap-tag"&gt;YAML&lt;/span&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;div class="ap-skill"&gt;
+&lt;div class="ap-skill__title"&gt;Platforms &amp;amp; Infrastructure&lt;/div&gt;
+&lt;div class="ap-skill__tags"&gt;
+&lt;span class="ap-tag"&gt;Linux (RHEL, Ubuntu)&lt;/span&gt;
+&lt;span class="ap-tag"&gt;Azure&lt;/span&gt;
+&lt;span class="ap-tag"&gt;AWS&lt;/span&gt;
+&lt;span class="ap-tag"&gt;DigitalOcean&lt;/span&gt;
+&lt;span class="ap-tag"&gt;Linode&lt;/span&gt;
+&lt;span class="ap-tag"&gt;Nginx&lt;/span&gt;
+&lt;span class="ap-tag"&gt;PostgreSQL&lt;/span&gt;
+&lt;span class="ap-tag"&gt;Tailscale&lt;/span&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;div class="ap-skill"&gt;
+&lt;div class="ap-skill__title"&gt;Containers &amp;amp; DevOps&lt;/div&gt;
+&lt;div class="ap-skill__tags"&gt;
+&lt;span class="ap-tag"&gt;Docker&lt;/span&gt;
+&lt;span class="ap-tag"&gt;Podman&lt;/span&gt;
+&lt;span class="ap-tag"&gt;Kubernetes&lt;/span&gt;
+&lt;span class="ap-tag"&gt;OpenShift&lt;/span&gt;
+&lt;span class="ap-tag"&gt;Ansible&lt;/span&gt;
+&lt;span class="ap-tag"&gt;Git&lt;/span&gt;
+&lt;span class="ap-tag"&gt;GitHub Actions&lt;/span&gt;
+&lt;span class="ap-tag"&gt;CI/CD&lt;/span&gt;
+&lt;span class="ap-tag"&gt;IaC&lt;/span&gt;
+&lt;span class="ap-tag"&gt;HA&lt;/span&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;div class="ap-skill"&gt;
+&lt;div class="ap-skill__title"&gt;Security &amp;amp; Compliance&lt;/div&gt;
+&lt;div class="ap-skill__tags"&gt;
+&lt;span class="ap-tag"&gt;SELinux&lt;/span&gt;
+&lt;span class="ap-tag"&gt;OpenSCAP&lt;/span&gt;
+&lt;span class="ap-tag"&gt;Network Security&lt;/span&gt;
+&lt;span class="ap-tag"&gt;Proxying&lt;/span&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/section&gt;
+&lt;section class="ap-certs" id="certifications"&gt;
+&lt;h2 class="ap-h2-sm"&gt;Certifications&lt;/h2&gt;
+&lt;p class="ap-certs__sub"&gt;Red Hat's exams are entirely hands-on, letting me get experience and a thorough understanding of the nitty-gritty of industry processes at the heart of global multinational corporations. Each credential links to its official verification page.&lt;/p&gt;
+&lt;div class="ap-timeline"&gt;
+&lt;div class="ap-year"&gt;&lt;span&gt;2026&lt;/span&gt;&lt;/div&gt;
+&lt;div class="ap-cert" data-vendor="microsoft"&gt;
+&lt;a class="ap-cert__link" href="https://learn.microsoft.com/api/credentials/share/en-us/RhythmChaudhary/42259FC10116F3BC?sharingId=A64392B715B3A0BF" target="_blank" rel="noopener"&gt;
+&lt;span class="ap-cert__dot"&gt;&lt;/span&gt;
+&lt;span class="ap-cert__logo" aria-hidden="true"&gt;
+&lt;svg width="28" height="28" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"&gt;
+&lt;rect x="1" y="1" width="10" height="10" fill="#F25022"/&gt;
+&lt;rect x="13" y="1" width="10" height="10" fill="#7FBA00"/&gt;
+&lt;rect x="1" y="13" width="10" height="10" fill="#00A4EF"/&gt;
+&lt;rect x="13" y="13" width="10" height="10" fill="#FFB900"/&gt;
+&lt;/svg&gt;
+&lt;/span&gt;
+&lt;div class="ap-cert__content"&gt;
+&lt;div class="ap-cert__meta"&gt;
+&lt;span class="ap-cert__badge"&gt;Microsoft&lt;/span&gt;
+&lt;span class="ap-cert__date"&gt;May 10, 2026&lt;/span&gt;
+&lt;/div&gt;
+&lt;div class="ap-cert__name"&gt;Microsoft Certified: Azure Fundamentals (AZ-900)&lt;span class="ap-cert__arrow"&gt;→&lt;/span&gt;&lt;/div&gt;
+&lt;/div&gt;
+&lt;/a&gt;
+&lt;/div&gt;
+&lt;div class="ap-year"&gt;&lt;span&gt;2025&lt;/span&gt;&lt;/div&gt;
+&lt;div class="ap-cert" data-vendor="redhat"&gt;
+&lt;a class="ap-cert__link" href="https://rhtapps.redhat.com/verify?certId=230-037-392" target="_blank" rel="noopener"&gt;
+&lt;span class="ap-cert__dot"&gt;&lt;/span&gt;
+&lt;span class="ap-cert__logo" aria-hidden="true"&gt;
+&lt;svg width="28" height="28" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"&gt;
+&lt;path fill="#EE0000" d="M16.009 13.386c1.577 0 3.86-.326 3.86-2.202a1.765 1.765 0 0 0-.04-.431l-.94-4.08c-.216-.898-.406-1.305-1.982-2.093-1.223-.625-3.888-1.658-4.676-1.658-.733 0-.947.946-1.822.946-.842 0-1.467-.706-2.255-.706-.757 0-1.25.515-1.63 1.576 0 0-1.06 2.99-1.197 3.424a.81.81 0 0 0-.028.245c0 1.16 4.568 4.974 10.71 4.974zm4.105-1.435c.218 1.032.218 1.14.218 1.277 0 1.766-1.984 2.745-4.593 2.745-5.895.004-11.06-3.451-11.06-5.734a2.326 2.326 0 0 1 .19-.92C2.746 9.402 0 9.785 0 12.214c0 3.98 9.43 8.883 16.894 8.883 5.72 0 7.166-2.585 7.166-4.622 0-1.604-1.388-3.425-3.945-4.524z"/&gt;
+&lt;/svg&gt;
+&lt;/span&gt;
+&lt;div class="ap-cert__content"&gt;
+&lt;div class="ap-cert__meta"&gt;
+&lt;span class="ap-cert__badge"&gt;Red Hat&lt;/span&gt;
+&lt;span class="ap-cert__date"&gt;Mar 19, 2025&lt;/span&gt;
+&lt;/div&gt;
+&lt;div class="ap-cert__name"&gt;Red Hat Certified Specialist in Security: Linux&lt;span class="ap-cert__arrow"&gt;→&lt;/span&gt;&lt;/div&gt;
+&lt;/div&gt;
+&lt;/a&gt;
+&lt;/div&gt;
+&lt;div class="ap-cert" data-vendor="redhat"&gt;
+&lt;a class="ap-cert__link" href="https://rhtapps.redhat.com/verify?certId=230-037-392" target="_blank" rel="noopener"&gt;
+&lt;span class="ap-cert__dot"&gt;&lt;/span&gt;
+&lt;span class="ap-cert__logo" aria-hidden="true"&gt;
+&lt;svg width="28" height="28" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"&gt;
+&lt;path fill="#EE0000" d="M16.009 13.386c1.577 0 3.86-.326 3.86-2.202a1.765 1.765 0 0 0-.04-.431l-.94-4.08c-.216-.898-.406-1.305-1.982-2.093-1.223-.625-3.888-1.658-4.676-1.658-.733 0-.947.946-1.822.946-.842 0-1.467-.706-2.255-.706-.757 0-1.25.515-1.63 1.576 0 0-1.06 2.99-1.197 3.424a.81.81 0 0 0-.028.245c0 1.16 4.568 4.974 10.71 4.974zm4.105-1.435c.218 1.032.218 1.14.218 1.277 0 1.766-1.984 2.745-4.593 2.745-5.895.004-11.06-3.451-11.06-5.734a2.326 2.326 0 0 1 .19-.92C2.746 9.402 0 9.785 0 12.214c0 3.98 9.43 8.883 16.894 8.883 5.72 0 7.166-2.585 7.166-4.622 0-1.604-1.388-3.425-3.945-4.524z"/&gt;
+&lt;/svg&gt;
+&lt;/span&gt;
+&lt;div class="ap-cert__content"&gt;
+&lt;div class="ap-cert__meta"&gt;
+&lt;span class="ap-cert__badge"&gt;Red Hat&lt;/span&gt;
+&lt;span class="ap-cert__date"&gt;Jan 13, 2025&lt;/span&gt;
+&lt;/div&gt;
+&lt;div class="ap-cert__name"&gt;Red Hat Certified OpenShift Administrator&lt;span class="ap-cert__arrow"&gt;→&lt;/span&gt;&lt;/div&gt;
+&lt;/div&gt;
+&lt;/a&gt;
+&lt;/div&gt;
+&lt;div class="ap-year"&gt;&lt;span&gt;2024&lt;/span&gt;&lt;/div&gt;
+&lt;div class="ap-cert" data-vendor="redhat"&gt;
+&lt;a class="ap-cert__link" href="https://rhtapps.redhat.com/verify?certId=230-037-392" target="_blank" rel="noopener"&gt;
+&lt;span class="ap-cert__dot"&gt;&lt;/span&gt;
+&lt;span class="ap-cert__logo" aria-hidden="true"&gt;
+&lt;svg width="28" height="28" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"&gt;
+&lt;path fill="#EE0000" d="M16.009 13.386c1.577 0 3.86-.326 3.86-2.202a1.765 1.765 0 0 0-.04-.431l-.94-4.08c-.216-.898-.406-1.305-1.982-2.093-1.223-.625-3.888-1.658-4.676-1.658-.733 0-.947.946-1.822.946-.842 0-1.467-.706-2.255-.706-.757 0-1.25.515-1.63 1.576 0 0-1.06 2.99-1.197 3.424a.81.81 0 0 0-.028.245c0 1.16 4.568 4.974 10.71 4.974zm4.105-1.435c.218 1.032.218 1.14.218 1.277 0 1.766-1.984 2.745-4.593 2.745-5.895.004-11.06-3.451-11.06-5.734a2.326 2.326 0 0 1 .19-.92C2.746 9.402 0 9.785 0 12.214c0 3.98 9.43 8.883 16.894 8.883 5.72 0 7.166-2.585 7.166-4.622 0-1.604-1.388-3.425-3.945-4.524z"/&gt;
+&lt;/svg&gt;
+&lt;/span&gt;
+&lt;div class="ap-cert__content"&gt;
+&lt;div class="ap-cert__meta"&gt;
+&lt;span class="ap-cert__badge"&gt;Red Hat&lt;/span&gt;
+&lt;span class="ap-cert__date"&gt;Nov 13, 2024&lt;/span&gt;
+&lt;/div&gt;
+&lt;div class="ap-cert__name"&gt;Red Hat Certified Specialist in Containers&lt;span class="ap-cert__arrow"&gt;→&lt;/span&gt;&lt;/div&gt;
+&lt;/div&gt;
+&lt;/a&gt;
+&lt;/div&gt;
+&lt;div class="ap-cert" data-vendor="redhat"&gt;
+&lt;a class="ap-cert__link" href="https://rhtapps.redhat.com/verify?certId=230-037-392" target="_blank" rel="noopener"&gt;
+&lt;span class="ap-cert__dot"&gt;&lt;/span&gt;
+&lt;span class="ap-cert__logo" aria-hidden="true"&gt;
+&lt;svg width="28" height="28" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"&gt;
+&lt;path fill="#EE0000" d="M16.009 13.386c1.577 0 3.86-.326 3.86-2.202a1.765 1.765 0 0 0-.04-.431l-.94-4.08c-.216-.898-.406-1.305-1.982-2.093-1.223-.625-3.888-1.658-4.676-1.658-.733 0-.947.946-1.822.946-.842 0-1.467-.706-2.255-.706-.757 0-1.25.515-1.63 1.576 0 0-1.06 2.99-1.197 3.424a.81.81 0 0 0-.028.245c0 1.16 4.568 4.974 10.71 4.974zm4.105-1.435c.218 1.032.218 1.14.218 1.277 0 1.766-1.984 2.745-4.593 2.745-5.895.004-11.06-3.451-11.06-5.734a2.326 2.326 0 0 1 .19-.92C2.746 9.402 0 9.785 0 12.214c0 3.98 9.43 8.883 16.894 8.883 5.72 0 7.166-2.585 7.166-4.622 0-1.604-1.388-3.425-3.945-4.524z"/&gt;
+&lt;/svg&gt;
+&lt;/span&gt;
+&lt;div class="ap-cert__content"&gt;
+&lt;div class="ap-cert__meta"&gt;
+&lt;span class="ap-cert__badge"&gt;Red Hat&lt;/span&gt;
+&lt;span class="ap-cert__date"&gt;Aug 9, 2024&lt;/span&gt;
+&lt;/div&gt;
+&lt;div class="ap-cert__name"&gt;Red Hat Certified Engineer&lt;span class="ap-cert__arrow"&gt;→&lt;/span&gt;&lt;/div&gt;
+&lt;/div&gt;
+&lt;/a&gt;
+&lt;/div&gt;
+&lt;div class="ap-year"&gt;&lt;span&gt;2023&lt;/span&gt;&lt;/div&gt;
+&lt;div class="ap-cert" data-vendor="redhat"&gt;
+&lt;a class="ap-cert__link" href="https://rhtapps.redhat.com/verify?certId=230-037-392" target="_blank" rel="noopener"&gt;
+&lt;span class="ap-cert__dot"&gt;&lt;/span&gt;
+&lt;span class="ap-cert__logo" aria-hidden="true"&gt;
+&lt;svg width="28" height="28" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"&gt;
+&lt;path fill="#EE0000" d="M16.009 13.386c1.577 0 3.86-.326 3.86-2.202a1.765 1.765 0 0 0-.04-.431l-.94-4.08c-.216-.898-.406-1.305-1.982-2.093-1.223-.625-3.888-1.658-4.676-1.658-.733 0-.947.946-1.822.946-.842 0-1.467-.706-2.255-.706-.757 0-1.25.515-1.63 1.576 0 0-1.06 2.99-1.197 3.424a.81.81 0 0 0-.028.245c0 1.16 4.568 4.974 10.71 4.974zm4.105-1.435c.218 1.032.218 1.14.218 1.277 0 1.766-1.984 2.745-4.593 2.745-5.895.004-11.06-3.451-11.06-5.734a2.326 2.326 0 0 1 .19-.92C2.746 9.402 0 9.785 0 12.214c0 3.98 9.43 8.883 16.894 8.883 5.72 0 7.166-2.585 7.166-4.622 0-1.604-1.388-3.425-3.945-4.524z"/&gt;
+&lt;/svg&gt;
+&lt;/span&gt;
+&lt;div class="ap-cert__content"&gt;
+&lt;div class="ap-cert__meta"&gt;
+&lt;span class="ap-cert__badge"&gt;Red Hat&lt;/span&gt;
+&lt;span class="ap-cert__date"&gt;Mar 7, 2023&lt;/span&gt;
+&lt;/div&gt;
+&lt;div class="ap-cert__name"&gt;Red Hat Certified System Administrator&lt;span class="ap-cert__arrow"&gt;→&lt;/span&gt;&lt;/div&gt;
+&lt;/div&gt;
+&lt;/a&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/section&gt;
+&lt;/div&gt;</description></item><item><title>Search</title><link>https://rhythmdev.me/search/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://rhythmdev.me/search/</guid><description/></item></channel></rss>

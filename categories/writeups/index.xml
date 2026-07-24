@@ -1,0 +1,444 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Writeups on Rhythm Chaudhary</title><link>https://rhythmdev.me/categories/writeups/</link><description>Recent content in Writeups on Rhythm Chaudhary</description><generator>Hugo -- gohugo.io</generator><language>en-us</language><lastBuildDate>Sun, 19 Jul 2026 00:00:00 +0000</lastBuildDate><atom:link href="https://rhythmdev.me/categories/writeups/index.xml" rel="self" type="application/rss+xml"/><item><title>Recovering a Single Node OpenShift Cluster from Expired Kubelet Certificates</title><link>https://rhythmdev.me/p/recovering-a-single-node-openshift-cluster-from-expired-kubelet-certificates/</link><pubDate>Sun, 19 Jul 2026 00:00:00 +0000</pubDate><guid>https://rhythmdev.me/p/recovering-a-single-node-openshift-cluster-from-expired-kubelet-certificates/</guid><description>&lt;img src="https://rhythmdev.me/p/recovering-a-single-node-openshift-cluster-from-expired-kubelet-certificates/degraded-cluster-operators.webp" alt="Featured image of post Recovering a Single Node OpenShift Cluster from Expired Kubelet Certificates" /&gt;&lt;p&gt;If you have set up OpenShift in a VM, especially a Single Node OpenShift (SNO) lab, there is a good chance you will run into this at some point. You shut the cluster down, come back a day or two later, and open the web console to log in. Instead of the login page, you get met with this:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-fallback" data-lang="fallback"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;error: server_error The authorization server encountered an unexpected condition
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;that prevented it from fulfilling the request.
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;That error is the single most common problem with an SNO lab: expired kubelet certificates. The short version is that OpenShift uses TLS certificates that only last about 24 hours. They rotate on their own while the cluster is running, but if the machine is off when one expires, the kubelet can no longer authenticate on the next boot, and the whole cluster falls apart.&lt;/p&gt;
+&lt;h2 id="just-want-it-fixed"&gt;Just Want It Fixed?
+&lt;/h2&gt;&lt;p&gt;I wrote two scripts that handle the entire recovery for you. They run from your workstation (the Fedora host), not from the node. Grab them with:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Quick fix: run after every boot&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;curl -O https://rhythmdev.me/scripts/fix-sno-quick.sh
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Full fix: for when the cluster has been broken for a while&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;curl -O https://rhythmdev.me/scripts/fix-sno-full.sh
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;chmod +x fix-sno-quick.sh fix-sno-full.sh
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Run the quick one first:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;./fix-sno-quick.sh
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;If the cluster is still unhealthy after 10 minutes, run the full one:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;./fix-sno-full.sh
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;That is all most people need. If you would rather understand what is actually going wrong and fix it by hand, the rest of this post walks through every step, and the two scripts just do the same thing automatically.&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;New to SNO on a VM? My &lt;a class="link" href="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/" target="_blank" rel="noopener"
+&gt;previous post on setting up a Single Node OpenShift lab on Fedora&lt;/a&gt; covers the initial install.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr&gt;
+&lt;h2 id="why-this-happens"&gt;Why This Happens
+&lt;/h2&gt;&lt;p&gt;OpenShift uses short-lived TLS certificates (around 24 hours) for communication between the kubelet and the API server. While the cluster is running, these rotate automatically before they expire. The trouble starts when the cluster is off. The certificate expires while the machine is shut down, and on the next boot the kubelet can no longer authenticate to request a new one.&lt;/p&gt;
+&lt;p&gt;Here is how it cascades:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;The kubelet cert expires.&lt;/li&gt;
+&lt;li&gt;The kubelet tries to talk to the kube-apiserver and gets treated as &lt;code&gt;system:anonymous&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;The kubelet can&amp;rsquo;t update node status, so heartbeats fail.&lt;/li&gt;
+&lt;li&gt;The node controller marks the node &lt;code&gt;NotReady&lt;/code&gt; and applies &lt;code&gt;unreachable&lt;/code&gt; taints.&lt;/li&gt;
+&lt;li&gt;No new pods can schedule on the tainted node.&lt;/li&gt;
+&lt;li&gt;Running pods start failing because their service account tokens can&amp;rsquo;t be fetched.&lt;/li&gt;
+&lt;li&gt;OAuth, the console, and everything else falls over.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;The login error is just the symptom sitting on top of all of this. Run &lt;code&gt;oc get clusteroperators&lt;/code&gt; at this point and you get a wall of operators reporting &lt;code&gt;Available: False&lt;/code&gt; and &lt;code&gt;Degraded: True&lt;/code&gt;:&lt;/p&gt;
+&lt;p&gt;&lt;img src="https://rhythmdev.me/p/recovering-a-single-node-openshift-cluster-from-expired-kubelet-certificates/degraded-cluster-operators.webp"
+width="1214"
+height="980"
+srcset="https://rhythmdev.me/p/recovering-a-single-node-openshift-cluster-from-expired-kubelet-certificates/degraded-cluster-operators_hu_ce4045eea1ecd22f.webp 480w, https://rhythmdev.me/p/recovering-a-single-node-openshift-cluster-from-expired-kubelet-certificates/degraded-cluster-operators_hu_17d734e5f4b565c9.webp 1024w"
+loading="lazy"
+alt="oc get clusteroperators output showing most operators Available False and Degraded True after the kubelet cert expired"
+class="gallery-image"
+data-flex-grow="123"
+data-flex-basis="297px"
+&gt;&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="how-to-tell-if-this-is-your-problem"&gt;How to Tell If This Is Your Problem
+&lt;/h2&gt;&lt;p&gt;SSH into your node and check the kubelet logs:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;ssh core@openshift-cluster
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo journalctl -u kubelet --since &lt;span class="s2"&gt;&amp;#34;5 min ago&amp;#34;&lt;/span&gt; --no-pager &lt;span class="p"&gt;|&lt;/span&gt; tail -30
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;If you see lines like these, it&amp;rsquo;s the cert:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-fallback" data-lang="fallback"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&amp;#34;Current certificate is expired&amp;#34; logger=&amp;#34;kubernetes.io/kube-apiserver-client-kubelet&amp;#34;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&amp;#34;Failed to get status for pod&amp;#34; err=&amp;#34;pods \&amp;#34;xyz\&amp;#34; is forbidden: User \&amp;#34;system:anonymous\&amp;#34; cannot get resource...&amp;#34;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;You can also check the cert directly:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo openssl x509 -noout -dates -in /var/lib/kubelet/pki/kubelet-client-current.pem
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;If &lt;code&gt;notAfter&lt;/code&gt; is in the past, that&amp;rsquo;s your problem.&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;Check your clock first.&lt;/strong&gt; Run &lt;code&gt;timedatectl&lt;/code&gt; and make sure the system time is correct. A drifted clock makes valid certs look expired. If you&amp;rsquo;re on VMware, make sure VMware time sync is disabled, as it can quietly mess with your VM&amp;rsquo;s clock.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr&gt;
+&lt;h2 id="quick-fix-boot-time-recovery"&gt;Quick Fix (Boot-Time Recovery)
+&lt;/h2&gt;&lt;p&gt;This is for when you have just booted the cluster and the cert expired while it was off. No pods have had time to build up stale state yet.&lt;/p&gt;
+&lt;h3 id="step-1-delete-the-expired-cert-and-restart-kubelet"&gt;Step 1: Delete the expired cert and restart kubelet
+&lt;/h3&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;ssh core@openshift-cluster
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo rm /var/lib/kubelet/pki/kubelet-client-current.pem
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo systemctl restart kubelet
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;exit&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;With the cert gone, the kubelet falls back to its bootstrap credentials and submits a Certificate Signing Request (CSR) to the API server.&lt;/p&gt;
+&lt;h3 id="step-2-approve-the-csrs"&gt;Step 2: Approve the CSRs
+&lt;/h3&gt;&lt;p&gt;Back on your workstation:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc get csr -o go-template&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;{{range .items}}{{if not .status}}{{.metadata.name}}{{&amp;#34;\n&amp;#34;}}{{end}}{{end}}&amp;#39;&lt;/span&gt; &lt;span class="p"&gt;|&lt;/span&gt; xargs oc adm certificate approve
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Run this twice, about 30 seconds apart. OpenShift generates two CSRs:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Client CSR:&lt;/strong&gt; lets the kubelet authenticate to the API server.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Serving CSR:&lt;/strong&gt; lets the API server authenticate to the kubelet. This one only appears after the client CSR is approved.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id="step-3-verify"&gt;Step 3: Verify
+&lt;/h3&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc get nodes
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;The node should flip from &lt;code&gt;NotReady&lt;/code&gt; to &lt;code&gt;Ready&lt;/code&gt;. After that, give it 5 to 10 minutes for the operators and pods to come up. You can watch progress with:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;watch &lt;span class="s2"&gt;&amp;#34;oc get clusteroperators | grep -v &amp;#39;True.*False.*False&amp;#39;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;When that output is empty, you are fully recovered.&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;Most of the time this is the only fix you need. If you run it after every boot, you will rarely need the deep recovery below.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr&gt;
+&lt;h2 id="full-recovery-deep-fix"&gt;Full Recovery (Deep Fix)
+&lt;/h2&gt;&lt;p&gt;This is for when the cluster has been running with expired certs for a while. Maybe the cert expired while the cluster was still on, or you booted it and didn&amp;rsquo;t fix the cert straight away. Pods have stale tokens, the API servers have cached bad certs, and the quick fix on its own won&amp;rsquo;t be enough.&lt;/p&gt;
+&lt;h3 id="how-to-know-you-need-this"&gt;How to know you need this
+&lt;/h3&gt;&lt;p&gt;If you have done the quick fix, the node is &lt;code&gt;Ready&lt;/code&gt;, but the operators are still broken after 10 minutes, and you see pods stuck in &lt;code&gt;ContainerCreating&lt;/code&gt; or operators reporting &lt;code&gt;401&lt;/code&gt; errors:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc get clusteroperators &lt;span class="p"&gt;|&lt;/span&gt; grep &lt;span class="m"&gt;401&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc get pods -A &lt;span class="p"&gt;|&lt;/span&gt; grep -c ContainerCreating
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Then you need the deep fix.&lt;/p&gt;
+&lt;h3 id="step-1-fix-the-cert-same-as-the-quick-fix"&gt;Step 1: Fix the cert (same as the quick fix)
+&lt;/h3&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;span class="lnt"&gt;8
+&lt;/span&gt;&lt;span class="lnt"&gt;9
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;ssh core@openshift-cluster
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo rm /var/lib/kubelet/pki/kubelet-client-current.pem
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo systemctl restart kubelet
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;exit&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Approve CSRs (twice, 30 seconds apart)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc get csr -o go-template&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;{{range .items}}{{if not .status}}{{.metadata.name}}{{&amp;#34;\n&amp;#34;}}{{end}}{{end}}&amp;#39;&lt;/span&gt; &lt;span class="p"&gt;|&lt;/span&gt; xargs oc adm certificate approve
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sleep &lt;span class="m"&gt;30&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc get csr -o go-template&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;{{range .items}}{{if not .status}}{{.metadata.name}}{{&amp;#34;\n&amp;#34;}}{{end}}{{end}}&amp;#39;&lt;/span&gt; &lt;span class="p"&gt;|&lt;/span&gt; xargs oc adm certificate approve
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Wait for the node to show &lt;code&gt;Ready&lt;/code&gt;.&lt;/p&gt;
+&lt;h3 id="step-2-restart-the-networking-pods"&gt;Step 2: Restart the networking pods
+&lt;/h3&gt;&lt;p&gt;The OVN and Multus pods have been running with stale service account tokens. Every new pod depends on them for networking, so they get stuck at &lt;code&gt;ContainerCreating&lt;/code&gt; with &amp;ldquo;Unauthorized&amp;rdquo; errors from Multus.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc delete pod -n openshift-ovn-kubernetes --all
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc delete pod -n openshift-multus --all
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;These are managed by a DaemonSet, so they come straight back with fresh credentials. Wait about 60 seconds, then check:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc get pods -A &lt;span class="p"&gt;|&lt;/span&gt; grep -c ContainerCreating
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;The count should start dropping quickly.&lt;/p&gt;
+&lt;h3 id="step-3-restart-the-kube-apiserver-static-pod"&gt;Step 3: Restart the kube-apiserver static pod
+&lt;/h3&gt;&lt;p&gt;The kube-apiserver has been running since before the cert renewal. It has stale front-proxy certs and doesn&amp;rsquo;t trust the kubelet&amp;rsquo;s new serving cert. This causes two problems:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;oc logs&lt;/code&gt; fails with &amp;ldquo;certificate signed by unknown authority&amp;rdquo;.&lt;/li&gt;
+&lt;li&gt;The aggregated API servers (openshift-apiserver, oauth-apiserver) get 401 errors.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;span class="lnt"&gt;8
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;ssh core@openshift-cluster
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo crictl pods --name kube-apiserver -q &lt;span class="p"&gt;|&lt;/span&gt; xargs sudo crictl stopp
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo crictl pods --name kube-apiserver -q &lt;span class="p"&gt;|&lt;/span&gt; xargs sudo crictl rmp
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Also restart kube-controller-manager to refresh CA bundles&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo crictl pods --name kube-controller-manager -q &lt;span class="p"&gt;|&lt;/span&gt; xargs sudo crictl stopp
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo crictl pods --name kube-controller-manager -q &lt;span class="p"&gt;|&lt;/span&gt; xargs sudo crictl rmp
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;exit&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;blockquote&gt;
+&lt;p&gt;You will briefly lose &lt;code&gt;oc&lt;/code&gt; access (around 30 seconds) while the kube-apiserver restarts. This is expected.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;The kubelet recreates these static pods automatically from the manifests on disk.&lt;/p&gt;
+&lt;h3 id="step-4-restart-the-openshift-api-servers"&gt;Step 4: Restart the OpenShift API servers
+&lt;/h3&gt;&lt;p&gt;The OpenShift API servers also started with stale tokens:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc delete pods --all -n openshift-apiserver
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc delete pods --all -n openshift-oauth-apiserver
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc delete pods --all -n openshift-controller-manager
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc delete pods --all -n openshift-authentication
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Give them 2 to 3 minutes to come back as &lt;code&gt;Running&lt;/code&gt;.&lt;/p&gt;
+&lt;h3 id="step-5-restart-the-router"&gt;Step 5: Restart the router
+&lt;/h3&gt;&lt;p&gt;The router (HAProxy) handles all ingress traffic, including the web console and OAuth endpoints:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc delete pods --all -n openshift-ingress
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc delete pods --all -n openshift-console
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h3 id="step-6-verify-everything"&gt;Step 6: Verify everything
+&lt;/h3&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc get clusteroperators &lt;span class="p"&gt;|&lt;/span&gt; grep -v &lt;span class="s2"&gt;&amp;#34;True.*False.*False&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;If this is empty, you are done. Try the web console. If it still shows an OAuth error, open an incognito or private window, since stale cookies from failed login attempts can carry over.&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="the-dependency-chain"&gt;The Dependency Chain
+&lt;/h2&gt;&lt;p&gt;This helps explain why recovery takes time and why the order matters:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;span class="lnt"&gt;8
+&lt;/span&gt;&lt;span class="lnt"&gt;9
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-fallback" data-lang="fallback"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;etcd (static pod, already running)
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -&amp;gt; kube-apiserver (static pod, must trust new certs)
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -&amp;gt; kube-controller-manager (distributes CA bundles)
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -&amp;gt; OVN / Multus (networking, every pod needs this)
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -&amp;gt; openshift-apiserver (aggregated API)
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -&amp;gt; openshift-oauth-apiserver (OAuth tokens)
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -&amp;gt; authentication operator (OAuth server)
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -&amp;gt; router (HAProxy, ingress)
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -&amp;gt; console and OAuth route (login)
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Each layer has to be healthy before the next one works. On an SNO, all of this runs on one machine in sequence, which is why recovery still takes 10 to 15 minutes even after every fix is applied.&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="what-the-scripts-do"&gt;What the Scripts Do
+&lt;/h2&gt;&lt;p&gt;The two scripts from the top of the post are just the manual steps wrapped up with a few sanity checks and some colored output. It is worth reading what they run before you trust them on your cluster.&lt;/p&gt;
+&lt;h3 id="fix-sno-quicksh"&gt;fix-sno-quick.sh
+&lt;/h3&gt;&lt;p&gt;The boot-time recovery script. It checks the cert, deletes it if it has expired, restarts the kubelet, approves the CSRs, and confirms the node is &lt;code&gt;Ready&lt;/code&gt;.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt; 1
+&lt;/span&gt;&lt;span class="lnt"&gt; 2
+&lt;/span&gt;&lt;span class="lnt"&gt; 3
+&lt;/span&gt;&lt;span class="lnt"&gt; 4
+&lt;/span&gt;&lt;span class="lnt"&gt; 5
+&lt;/span&gt;&lt;span class="lnt"&gt; 6
+&lt;/span&gt;&lt;span class="lnt"&gt; 7
+&lt;/span&gt;&lt;span class="lnt"&gt; 8
+&lt;/span&gt;&lt;span class="lnt"&gt; 9
+&lt;/span&gt;&lt;span class="lnt"&gt;10
+&lt;/span&gt;&lt;span class="lnt"&gt;11
+&lt;/span&gt;&lt;span class="lnt"&gt;12
+&lt;/span&gt;&lt;span class="lnt"&gt;13
+&lt;/span&gt;&lt;span class="lnt"&gt;14
+&lt;/span&gt;&lt;span class="lnt"&gt;15
+&lt;/span&gt;&lt;span class="lnt"&gt;16
+&lt;/span&gt;&lt;span class="lnt"&gt;17
+&lt;/span&gt;&lt;span class="lnt"&gt;18
+&lt;/span&gt;&lt;span class="lnt"&gt;19
+&lt;/span&gt;&lt;span class="lnt"&gt;20
+&lt;/span&gt;&lt;span class="lnt"&gt;21
+&lt;/span&gt;&lt;span class="lnt"&gt;22
+&lt;/span&gt;&lt;span class="lnt"&gt;23
+&lt;/span&gt;&lt;span class="lnt"&gt;24
+&lt;/span&gt;&lt;span class="lnt"&gt;25
+&lt;/span&gt;&lt;span class="lnt"&gt;26
+&lt;/span&gt;&lt;span class="lnt"&gt;27
+&lt;/span&gt;&lt;span class="lnt"&gt;28
+&lt;/span&gt;&lt;span class="lnt"&gt;29
+&lt;/span&gt;&lt;span class="lnt"&gt;30
+&lt;/span&gt;&lt;span class="lnt"&gt;31
+&lt;/span&gt;&lt;span class="lnt"&gt;32
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="cp"&gt;#!/bin/bash
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# fix-sno-quick.sh - Quick SNO recovery after boot&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Run this EVERY TIME you start your SNO after it&amp;#39;s been off for &amp;gt;20 hours.&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Usage: ./fix-sno-quick.sh [ssh-host]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;set&lt;/span&gt; -euo pipefail
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nv"&gt;SSH_HOST&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;1&lt;/span&gt;&lt;span class="k"&gt;:-&lt;/span&gt;&lt;span class="nv"&gt;core&lt;/span&gt;&lt;span class="p"&gt;@openshift-cluster&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nv"&gt;GREEN&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;\033[0;32m&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nv"&gt;YELLOW&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;\033[1;33m&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nv"&gt;RED&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;\033[0;31m&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nv"&gt;NC&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;\033[0m&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;info&lt;span class="o"&gt;()&lt;/span&gt; &lt;span class="o"&gt;{&lt;/span&gt; &lt;span class="nb"&gt;echo&lt;/span&gt; -e &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;GREEN&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;&lt;span class="s2"&gt;[OK]&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;NC&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;&lt;span class="s2"&gt; &lt;/span&gt;&lt;span class="nv"&gt;$1&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="o"&gt;}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;warn&lt;span class="o"&gt;()&lt;/span&gt; &lt;span class="o"&gt;{&lt;/span&gt; &lt;span class="nb"&gt;echo&lt;/span&gt; -e &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;YELLOW&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;&lt;span class="s2"&gt;[!]&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;NC&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;&lt;span class="s2"&gt; &lt;/span&gt;&lt;span class="nv"&gt;$1&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="o"&gt;}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;error&lt;span class="o"&gt;()&lt;/span&gt; &lt;span class="o"&gt;{&lt;/span&gt; &lt;span class="nb"&gt;echo&lt;/span&gt; -e &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;RED&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;&lt;span class="s2"&gt;[x]&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;NC&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;&lt;span class="s2"&gt; &lt;/span&gt;&lt;span class="nv"&gt;$1&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="o"&gt;}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Remove the expired cert and restart kubelet&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;info &lt;span class="s2"&gt;&amp;#34;Removing expired kubelet client certificate...&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;ssh &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$SSH_HOST&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;sudo rm -f /var/lib/kubelet/pki/kubelet-client-current.pem&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;info &lt;span class="s2"&gt;&amp;#34;Restarting kubelet...&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;ssh &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$SSH_HOST&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;sudo systemctl restart kubelet&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Approve CSRs in rounds to catch both the client and serving certs&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;info &lt;span class="s2"&gt;&amp;#34;Approving CSRs...&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;for&lt;/span&gt; round in &lt;span class="m"&gt;1&lt;/span&gt; &lt;span class="m"&gt;2&lt;/span&gt; &lt;span class="m"&gt;3&lt;/span&gt; 4&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="k"&gt;do&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; oc get csr -o go-template&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;{{range .items}}{{if not .status}}{{.metadata.name}}{{&amp;#34;\n&amp;#34;}}{{end}}{{end}}&amp;#39;&lt;/span&gt; 2&amp;gt;/dev/null &lt;span class="se"&gt;\
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="p"&gt;|&lt;/span&gt; xargs --no-run-if-empty oc adm certificate approve 2&amp;gt;/dev/null &lt;span class="o"&gt;||&lt;/span&gt; &lt;span class="nb"&gt;true&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; sleep &lt;span class="m"&gt;15&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;done&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Verify the node came back&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;info &lt;span class="s2"&gt;&amp;#34;Checking node status...&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc get nodes
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;info &lt;span class="s2"&gt;&amp;#34;Done. Wait 5-10 minutes for operators to recover.&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;echo&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34; Monitor: watch \&amp;#34;oc get clusteroperators | grep -v &amp;#39;True.*False.*False&amp;#39;\&amp;#34;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;The hosted copy adds cert-expiry detection and a Ready-state wait loop: &lt;a class="link" href="https://rhythmdev.me/scripts/fix-sno-quick.sh" target="_blank" rel="noopener"
+&gt;fix-sno-quick.sh&lt;/a&gt;.&lt;/p&gt;
+&lt;h3 id="fix-sno-fullsh"&gt;fix-sno-full.sh
+&lt;/h3&gt;&lt;p&gt;The deep recovery script. It runs everything above, then restarts the networking pods, the static pods, the API servers, and the router. Use it when the quick fix doesn&amp;rsquo;t fully recover the cluster after 10 minutes. It is long, so rather than paste the whole thing here, you can read or download it directly: &lt;a class="link" href="https://rhythmdev.me/scripts/fix-sno-full.sh" target="_blank" rel="noopener"
+&gt;fix-sno-full.sh&lt;/a&gt;.&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="preventing-this"&gt;Preventing This
+&lt;/h2&gt;&lt;p&gt;The 24-hour cert window means any shutdown longer than about 20 hours will trigger this. A few options:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;Don&amp;rsquo;t leave it off for more than 20 hours.&lt;/strong&gt; If you&amp;rsquo;re doing daily lab work, shut down at night and boot in the morning, and you stay inside the window.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;Run the quick fix script on every boot.&lt;/strong&gt; It takes about 60 seconds and quickly becomes muscle memory. This is what I do.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;Automate CSR approval&lt;/strong&gt; with a systemd unit on the node that watches for and approves pending CSRs on startup. More work to set up, but hands-free.&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;For a learning lab, option 2 is the one I would go with.&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="key-takeaways"&gt;Key Takeaways
+&lt;/h2&gt;&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Kubelet certificates are short-lived (around 24h) and rotate on their own.&lt;/strong&gt; If they expire, the kubelet becomes &lt;code&gt;system:anonymous&lt;/code&gt; and the cluster cascades into failure.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;CSRs come in pairs.&lt;/strong&gt; The client cert first, the serving cert second. Approve both.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Static pods&lt;/strong&gt; (etcd, kube-apiserver) are managed by the kubelet from manifests on disk. Restart them with &lt;code&gt;crictl&lt;/code&gt;, not &lt;code&gt;oc delete&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;The order matters.&lt;/strong&gt; Networking, then API servers, then authentication, then router, then console.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;ContainerCreating&lt;/code&gt; usually means networking is broken.&lt;/strong&gt; Restart OVN and Multus.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;401 errors from operators mean the kube-apiserver has stale certs.&lt;/strong&gt; Restart the static pod.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Stale browser cookies&lt;/strong&gt; can fake an auth failure even when the cluster is healthy. Try incognito.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Once you have been through this a couple of times it stops being intimidating, and the quick fix turns into a routine part of booting the lab.&lt;/p&gt;</description></item></channel></rss>
