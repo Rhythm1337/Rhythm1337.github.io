@@ -4,7 +4,7 @@ description: "What happens when your SNO's kubelet cert expires, why everything 
 date: 2026-07-19
 draft: false
 categories:
-  - Projects
+  - Writeups
 tags:
   - OpenShift
   - Red Hat

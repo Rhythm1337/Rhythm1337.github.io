@@ -11,7 +11,6 @@ tags:
     - Immich
     - SELinux
     - Tailscale
-    - Self-Hosting
     - Homelab
 image: thumbnail.png
 ---
