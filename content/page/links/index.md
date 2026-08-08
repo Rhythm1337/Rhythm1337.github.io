@@ -4,11 +4,11 @@ links:
   - title: GitHub
     description: My coding projects and contributions
     website: https://github.com/rhythm1337
-    image: https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png
+    image: /img/github-logo.png
   - title: LinkedIn
     description: Professional profile and experience
     website: https://linkedin.com/in/rhythmchaudhary
-    image: https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/LinkedIn_logo_initials.png/480px-LinkedIn_logo_initials.png
+    image: /img/linkedin-logo.png
   - title: Red Hat Certifications
     description: My Red Hat certified credentials and certifications
     website: https://rhtapps.redhat.com/verify?certId=230-037-392
