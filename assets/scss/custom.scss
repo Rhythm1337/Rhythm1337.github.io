@@ -43,6 +43,20 @@ img[src*="Red_Hat_logo"] {
     }
 }
 
+/* ─── Related content cards ────────────────────────────────────────────── */
+.related-content .article-list--tile article.has-image .article-image img {
+    filter: saturate(0.55) brightness(0.72) contrast(0.95);
+}
+
+.related-content .article-list--tile article.has-image .article-details {
+    background-color: rgba(8, 10, 14, 0.52) !important;
+    background-image: none !important;
+}
+
+.related-content .article-list--tile article.has-image .article-title {
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+}
+
 /* ─── About Page (scoped) ───────────────────────────────────────────────── */
 .about-page {
     font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif;
