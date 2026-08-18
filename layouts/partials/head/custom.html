@@ -22,3 +22,28 @@
 <!-- Google AdSense -->
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7502953893400892"
      crossorigin="anonymous"></script>
+
+{{ if and .IsPage (eq .Section "post") }}
+{{- $articleSchema := dict
+    "@context" "https://schema.org"
+    "@type" "BlogPosting"
+    "headline" .Title
+    "description" (.Description | default (.Summary | plainify))
+    "datePublished" (.Date.Format "2006-01-02T15:04:05Z07:00")
+    "dateModified" (.Lastmod.Format "2006-01-02T15:04:05Z07:00")
+    "mainEntityOfPage" (dict "@type" "WebPage" "@id" .Permalink)
+    "url" .Permalink
+    "author" (dict "@type" "Person" "name" .Site.Title "url" .Site.BaseURL)
+    "publisher" (dict "@type" "Person" "name" .Site.Title)
+    "wordCount" .WordCount
+    "inLanguage" .Language.LanguageCode
+-}}
+{{- with .Params.tags }}
+    {{- $articleSchema = merge $articleSchema (dict "keywords" .) -}}
+{{- end }}
+{{- $articleImage := partial "helper/image" (dict "Context" . "Type" "article") -}}
+{{- if $articleImage.exists }}
+    {{- $articleSchema = merge $articleSchema (dict "image" (slice ($articleImage.permalink | absURL))) -}}
+{{- end }}
+<script type="application/ld+json">{{ $articleSchema | jsonify | safeJS }}</script>
+{{ end }}

@@ -1,5 +1,6 @@
 ---
-title: "Running an RTX A5500 Laptop GPU in a Proxmox container"
+title: "Running a Frankenstein GPU in Proxmox with LXC"
+slug: "running-a-frankenstein-gpu-in-proxmox-with-lxc"
 description: "Setting up an RTX A5500 Laptop GPU for an Ubuntu LXC container on Proxmox, from host drivers and device access to Unsloth Studio"
 date: 2026-08-19T00:00:00+05:30
 draft: false
@@ -12,7 +13,7 @@ tags:
     - NVIDIA
     - Unsloth
     - Homelab
-image: /p/running-an-rtx-a5500-laptop-gpu-in-a-proxmox-container/unsloth-gpu-detected.png
+image: /p/running-a-frankenstein-gpu-in-proxmox-with-lxc/unsloth-gpu-detected.png
 ---
 
 I set up an AI server on Proxmox using a laptop GPU mounted in a desktop machine. It works well,
@@ -27,7 +28,7 @@ the VM route doesn't work.
 An **NVIDIA RTX A5500 Laptop GPU**: GA103GLM, 16 GB, Ampere, compute capability 8.6. Mobile
 silicon pulled from a workstation laptop and mounted on a desktop board.
 
-![lspci showing the GA103GLM RTX A5500 Laptop GPU](01-gpu-lspci.png)
+![Card showing up on Proxmox](01-gpu-lspci.png)
 
 Good value: roughly twice the compute of an RTX 3060 with 4 GB more VRAM, which for fine-tuning is
 the difference between a 13B model being painful and being comfortable.
@@ -169,7 +170,7 @@ curl -fsSL https://unsloth.ai/install.sh | sh
 
 It sets up its own Python environment and pulls the matching PyTorch build.
 
-<img src="unsloth-gpu-detected.png" alt="Unsloth installer reporting NVIDIA GPU detected" loading="lazy">
+<img src="unsloth-gpu-detected.png" width="1024" height="450" alt="Unsloth installer reporting NVIDIA GPU detected" loading="lazy">
 
 Set a password before doing anything else. Studio has no auth until you do:
 

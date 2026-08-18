@@ -1,0 +1,13 @@
+<article class="{{ if .Params.image }}has-image {{ end }}main-article">
+    {{ .Scratch.Set "renderSingleArticle" true }}
+    {{ partial "article/components/header" . }}
+    {{ .Scratch.Delete "renderSingleArticle" }}
+
+    {{ partial "article/components/content" . }}
+
+    {{ partial "article/components/footer" . }}
+
+    {{ if or .Params.math .Site.Params.article.math }}
+        {{ partialCached "article/components/math.html" . }}
+    {{ end }}
+</article>
