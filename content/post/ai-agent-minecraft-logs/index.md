@@ -1,8 +1,6 @@
 ---
 title: "Giving an AI Agent Read-Only Access to Minecraft Logs"
 slug: "ai-agent-minecraft-logs"
-aliases:
-    - /p/giving-an-ai-agent-read-only-access-to-minecraft-logs/
 description: "How I let an AI agent read crash logs on a Pterodactyl machine without letting it near anything else, using ACLs, one locked-down script, and a setgid wrapper"
 date: 2026-08-23
 draft: false
