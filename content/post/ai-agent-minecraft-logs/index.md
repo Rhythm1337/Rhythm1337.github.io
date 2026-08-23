@@ -226,7 +226,7 @@ The bare `mclogs` call at the top exits 1 on purpose. With no arguments it print
 
 ## In Discord
 
-Staff shouldn't need an SSH key to ask why a server crashed, so Hermes also runs as a bot in our staff channel.
+Staff shouldn't need an SSH key to ask why a server crashed, so Hermes also runs as a bot in our staff channel, where staff have it going by Lag Detective.
 
 ![Hermes answering a question about server health in Discord](hermes-discord.webp)
 
