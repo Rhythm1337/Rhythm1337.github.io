@@ -1,7 +1,7 @@
 ---
 title: "Giving an AI Agent Read-Only Access to Minecraft Logs"
-description: "How I let an AI agent read crash logs on a Pterodactyl machine without giving it file access, using ACLs, one locked-down script, and a setgid wrapper"
-date: 2026-08-08
+description: "How I let an AI agent read crash logs on a Pterodactyl machine without letting it near anything else, using ACLs, one locked-down script, and a setgid wrapper"
+date: 2026-08-23
 draft: false
 categories:
     - Projects
@@ -21,7 +21,7 @@ Problem is, the same machine also runs the Pterodactyl panel, the panel's databa
 
 ![Pterodactyl console showing a Discord integration stack trace, spark TPS output, and a "Can't keep up!" server overload warning](pterodactyl-console-lag.webp)
 
-That screenshot is what staff normally end up reading: a mod spamming stack traces, spark TPS output, and the server running 44 ticks behind. All of it lives in `latest.log`, and that's the one thing Hermes gets to see.
+That screenshot is what staff normally end up reading: a mod spamming stack traces, spark TPS output, and the server running 44 ticks behind. All of it lives in `latest.log`, and that's the only part of this machine Hermes gets to see.
 
 This post is just about the access side: how Hermes gets the logs and how it's kept away from everything else. Setting up the agent itself is for another post.
 
@@ -38,7 +38,7 @@ I went through a couple of ideas before landing on the final one:
 | Block access to sensitive files | You have to list every bad file, and one you forget is one that leaks. Modded servers have hundreds of config files, and plugin configs often hold database passwords and bot tokens. |
 | Mirror the `logs` folder somewhere read-only | Works, but the mirror tracks the original folder, not its name. If a modpack swap deletes and recreates `logs`, the mirror quietly keeps showing the old one and the agent reports no crashes. Also four lines of setup per server. |
 
-What I ended up doing gives Hermes **no file access at all**. It just gets one command.
+What I ended up doing doesn't take Hermes' shell away. It has one, and it can run commands in it. It just runs them as an account that can't reach anything worth reaching, and the one thing it *can* reach is a single read-only command.
 
 ---
 
@@ -94,7 +94,7 @@ Pterodactyl identifies servers by long random IDs. Nobody should have to remembe
 
 ## 4. The Log-Reading Script
 
-This script is all Hermes ever gets. Six read-only operations, nothing else.
+This script is Hermes' only way into the logs. Six read-only operations, nothing else.
 
 `/usr/local/bin/mclogs.sh`:
 
@@ -209,9 +209,27 @@ sudo -u hermes-staff env PATH=/tmp /usr/local/bin/mclogs modded list
 
 That's the whole point of the wrapper: it throws away the caller's environment, so even if someone points `PATH` at a folder full of fake `tail` and `awk` binaries, the real ones run anyway. If this command errors out instead of listing logs, the env pinning in the wrapper isn't doing its job.
 
-Poking around with the powerless account also turned up a completely unrelated problem: the panel's `.env` file was readable by every account on the machine, database password and app key included, and had been since install. Nobody noticed because the new account was the first thing that ever went looking.
+Poking around with the powerless account also turned up a completely unrelated problem: the panel's `.env` file was readable by every account on the machine, database password and app key included, and had been since install. Nobody noticed because the new account was the first thing that ever went looking. It's `640 root:www-data` now, and the database password and app key were rotated on the assumption that anything readable by every local account since install should be treated as already leaked.
 
 Turns out making an account with no power and poking around with it is a pretty cheap way to audit the rest of the machine.
+
+---
+
+## What It Actually Looks Like
+
+The agent itself is a general-purpose one, with a pile of tools that have nothing to do with Minecraft. None of that matters here: on this machine, `mclogs` is the only tool that reaches anything. Here it is starting up as `hermes-staff`:
+
+![The Hermes agent starting in a terminal, showing its available skills and then listing the Minecraft servers it can pull logs for](hermes-agent-startup.webp)
+
+The bare `mclogs` call at the top exits 1 on purpose. With no arguments it prints the server list out of `/etc/mclogs.conf`, so the agent discovers what exists instead of me pasting server names into its prompt.
+
+## In Discord
+
+Staff shouldn't need an SSH key to ask why a server crashed, so Hermes also runs as a bot in our staff channel.
+
+![Hermes answering a question about server health in Discord](hermes-discord.webp)
+
+The bot runs as the same powerless account as before. It widens who can talk to the agent, not what the agent can reach.
 
 ---
 
@@ -219,16 +237,16 @@ Turns out making an account with no power and poking around with it is a pretty 
 
 **Running commands in-game.** Pterodactyl's API can send commands to a server, which would let Hermes run `/spark health` itself when someone asks about lag. But that permission is all-or-nothing, and the same access also covers `/op`, `/ban` and `/stop`. So instead, a staff member runs the command and Hermes reads the result out of the log. It costs a staff member maybe ten seconds, and I can live with that.
 
-**Containers or a separate VM.** A VM would be a real improvement, since the panel and the game servers currently share a machine with Hermes. But once the agent is down to one read-only command and no file access, the extra isolation doesn't buy much anymore. I'll bother with it the day Hermes is allowed to change files.
+**Containers or a separate VM.** A VM would be a real improvement, since the panel and the game servers currently share a machine with Hermes. But once the agent's account can't read anything on the box that matters, the extra isolation doesn't buy much anymore. I'll bother with it the day Hermes is allowed to change files.
 
 ---
 
 ## Key Takeaways
 
-- **Give the agent a tool, not access.** One command with six fixed operations is way easier to reason about than a filesystem with parts removed.
+- **Give the agent a tool, not access.** It can still run whatever it likes; the point is that almost nothing it runs gets anywhere. One command with six fixed operations is way easier to reason about than a filesystem with parts removed.
 - **If your plan involves listing every file to block, flip it around** and only allow what's needed.
 - **Rules in a prompt are a suggestion, not a limit**, especially when anyone who joins the server can write into the input.
 - **If a setgid wrapper mysteriously does nothing, try `bash -p`.** Would have saved me an hour.
 - **Put a size limit on anything an AI reads.** Context limits and API bills are both real.
 
-Now that the plumbing is done, the agent side is honestly the easy part: Hermes runs one command, reads the output, and can't touch anything else on the machine.
+Now that the plumbing is done, the agent side is honestly the easy part. Hermes has a shell and it uses it, but it's a shell with nothing in reach: the logs come back, and everything else on the machine answers with permission denied.
