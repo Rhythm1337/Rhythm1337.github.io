@@ -3,7 +3,7 @@ title: "Running a Frankenstein GPU in Proxmox with LXC"
 slug: "running-a-frankenstein-gpu-in-proxmox-with-lxc"
 description: "Setting up an RTX A5500 Laptop GPU for an Ubuntu LXC container on Proxmox, from host drivers and device access to Unsloth Studio"
 date: 2026-08-19T00:00:00+05:30
-draft: false
+draft: true
 categories:
     - Projects
 tags:
