@@ -12,7 +12,7 @@ tags:
     - Minecraft
     - Pterodactyl
     - ACLs
-image: pterodactyl-console-lag.webp
+image: hermes-agent-startup.webp
 ---
 
 Every time one of our modded Minecraft servers crashes or starts lagging, someone on staff has to open the Pterodactyl panel and scroll through the console to figure out what happened. The answer is almost always sitting right there in `latest.log`. So I've been building Hermes, an AI agent for our network, so staff can just ask "why did the modded server crash" in Discord and get an answer.
