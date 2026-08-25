@@ -13,7 +13,7 @@ tags:
     - NVIDIA
     - Unsloth
     - Homelab
-image: /p/running-a-frankenstein-gpu-in-proxmox-with-lxc/unsloth-gpu-detected.png
+image: proxmox-server.webp
 ---
 
 I set up an AI server on Proxmox using a laptop GPU mounted in a desktop machine. It works well,
@@ -27,6 +27,10 @@ the VM route doesn't work.
 
 An **NVIDIA RTX A5500 Laptop GPU**: GA103GLM, 16 GB, Ampere, compute capability 8.6. Mobile
 silicon pulled from a workstation laptop and mounted on a desktop board.
+
+![The RTX A5500 Laptop GPU, out of the box](gpu-card.webp)
+
+Mounted on a desktop board it looks ordinary enough. Proxmox sees it fine:
 
 ![Card showing up on Proxmox](01-gpu-lspci.png)
 
