@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Linux on Rhythm Chaudhary</title><link>https://rhythmdev.me/tags/linux/</link><description>Recent content in Linux on Rhythm Chaudhary</description><generator>Hugo -- gohugo.io</generator><language>en-us</language><lastBuildDate>Sun, 23 Aug 2026 00:00:00 +0000</lastBuildDate><atom:link href="https://rhythmdev.me/tags/linux/index.xml" rel="self" type="application/rss+xml"/><item><title>Giving an AI Agent Read-Only Access to Minecraft Logs</title><link>https://rhythmdev.me/p/ai-agent-minecraft-logs/</link><pubDate>Sun, 23 Aug 2026 00:00:00 +0000</pubDate><guid>https://rhythmdev.me/p/ai-agent-minecraft-logs/</guid><description>&lt;img src="https://rhythmdev.me/p/ai-agent-minecraft-logs/hermes-agent-startup.webp" alt="Featured image of post Giving an AI Agent Read-Only Access to Minecraft Logs" /&gt;&lt;p&gt;Every time one of our modded Minecraft servers crashes or starts lagging, someone on staff has to open the Pterodactyl panel and scroll through the console to figure out what happened. The answer is almost always sitting right there in &lt;code&gt;latest.log&lt;/code&gt;. So I&amp;rsquo;ve been building Hermes, an AI agent for our network, so staff can just ask &amp;ldquo;why did the modded server crash&amp;rdquo; in Discord and get an answer.&lt;/p&gt;
+&lt;p&gt;Problem is, the same machine also runs the Pterodactyl panel, the panel&amp;rsquo;s database, and every server&amp;rsquo;s world files. Hermes only needs the logs, and I really don&amp;rsquo;t want it anywhere near the rest.&lt;/p&gt;
+&lt;p&gt;&lt;img src="https://rhythmdev.me/p/ai-agent-minecraft-logs/pterodactyl-console-lag.webp"
+width="1920"
+height="1141"
+srcset="https://rhythmdev.me/p/ai-agent-minecraft-logs/pterodactyl-console-lag_hu_6692c391ad50a33a.webp 480w, https://rhythmdev.me/p/ai-agent-minecraft-logs/pterodactyl-console-lag_hu_9141bbfff0c6ae18.webp 1024w"
+loading="lazy"
+alt="Pterodactyl console showing a Discord integration stack trace, spark TPS output, and a “Can’t keep up!” server overload warning"
+class="gallery-image"
+data-flex-grow="168"
+data-flex-basis="403px"
+&gt;&lt;/p&gt;
+&lt;p&gt;That screenshot is what staff normally end up reading: a mod spamming stack traces, spark TPS output, and the server running 44 ticks behind. All of it lives in &lt;code&gt;latest.log&lt;/code&gt;, and that&amp;rsquo;s the only part of this machine Hermes gets to see.&lt;/p&gt;
+&lt;p&gt;This post is just about the access side: how Hermes gets the logs and how it&amp;rsquo;s kept away from everything else. Setting up the agent itself is for another post.&lt;/p&gt;
+&lt;h2 id="why-telling-hermes-dont-isnt-enough"&gt;Why Telling Hermes &amp;ldquo;Don&amp;rsquo;t&amp;rdquo; Isn&amp;rsquo;t Enough
+&lt;/h2&gt;&lt;p&gt;Minecraft logs contain player chat, usernames, sign text and command arguments. Anyone who can join the server can put text into the file Hermes is about to read.&lt;/p&gt;
+&lt;p&gt;So putting rules in the agent&amp;rsquo;s prompt doesn&amp;rsquo;t cut it. Prompt rules stop an agent that&amp;rsquo;s confused, not a player who&amp;rsquo;s actively trying to talk it into something. The restriction has to come from the OS itself.&lt;/p&gt;
+&lt;p&gt;I went through a couple of ideas before landing on the final one:&lt;/p&gt;
+&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;Approach&lt;/th&gt;
+&lt;th&gt;Problem&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;Block access to sensitive files&lt;/td&gt;
+&lt;td&gt;You have to list every bad file, and one you forget is one that leaks. Modded servers have hundreds of config files, and plugin configs often hold database passwords and bot tokens.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Mirror the &lt;code&gt;logs&lt;/code&gt; folder somewhere read-only&lt;/td&gt;
+&lt;td&gt;Works, but the mirror tracks the original folder, not its name. If a modpack swap deletes and recreates &lt;code&gt;logs&lt;/code&gt;, the mirror quietly keeps showing the old one and the agent reports no crashes. Also four lines of setup per server.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;What I ended up doing doesn&amp;rsquo;t take Hermes&amp;rsquo; shell away. It has one, and it can run commands in it. It just runs them as an account that can&amp;rsquo;t reach anything worth reaching, and the one thing it &lt;em&gt;can&lt;/em&gt; reach is a single read-only command.&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="1-create-the-group-and-the-account"&gt;1. Create the Group and the Account
+&lt;/h2&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo groupadd mclogs
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo useradd -r -m -d /var/lib/hermes-staff -s /bin/bash hermes-staff
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;&lt;code&gt;hermes-staff&lt;/code&gt; is the account Hermes will run as. I did &lt;strong&gt;not&lt;/strong&gt; add it to the &lt;code&gt;mclogs&lt;/code&gt; group, and that&amp;rsquo;s on purpose. The group is what unlocks the logs, and it only gets handed to the tool for the moment it runs, never to the account itself.&lt;/p&gt;
+&lt;h2 id="2-give-the-group-access-to-the-logs"&gt;2. Give the Group Access to the Logs
+&lt;/h2&gt;&lt;p&gt;Standard Linux permissions only allow one owner and one group per folder, and Pterodactyl already uses both. ACLs let you add an extra rule on top without disturbing that.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;span class="lnt"&gt;8
+&lt;/span&gt;&lt;span class="lnt"&gt;9
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nv"&gt;V&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;/var/lib/pterodactyl/volumes
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nv"&gt;U&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&amp;lt;server-uuid&amp;gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo setfacl -m g:mclogs:x /var/lib/pterodactyl &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$V&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$V&lt;/span&gt;&lt;span class="s2"&gt;/&lt;/span&gt;&lt;span class="nv"&gt;$U&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo setfacl -R -m g:mclogs:rX &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$V&lt;/span&gt;&lt;span class="s2"&gt;/&lt;/span&gt;&lt;span class="nv"&gt;$U&lt;/span&gt;&lt;span class="s2"&gt;/logs&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo mkdir -p &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$V&lt;/span&gt;&lt;span class="s2"&gt;/&lt;/span&gt;&lt;span class="nv"&gt;$U&lt;/span&gt;&lt;span class="s2"&gt;/crash-reports&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo chown --reference&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$V&lt;/span&gt;&lt;span class="s2"&gt;/&lt;/span&gt;&lt;span class="nv"&gt;$U&lt;/span&gt;&lt;span class="s2"&gt;/logs&amp;#34;&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$V&lt;/span&gt;&lt;span class="s2"&gt;/&lt;/span&gt;&lt;span class="nv"&gt;$U&lt;/span&gt;&lt;span class="s2"&gt;/crash-reports&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo setfacl -R -m g:mclogs:rX &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$V&lt;/span&gt;&lt;span class="s2"&gt;/&lt;/span&gt;&lt;span class="nv"&gt;$U&lt;/span&gt;&lt;span class="s2"&gt;/crash-reports&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo setfacl -d -m g:mclogs:r &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$V&lt;/span&gt;&lt;span class="s2"&gt;/&lt;/span&gt;&lt;span class="nv"&gt;$U&lt;/span&gt;&lt;span class="s2"&gt;/logs&amp;#34;&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$V&lt;/span&gt;&lt;span class="s2"&gt;/&lt;/span&gt;&lt;span class="nv"&gt;$U&lt;/span&gt;&lt;span class="s2"&gt;/crash-reports&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Repeat for each server.&lt;/p&gt;
+&lt;p&gt;The trick here is the first line. On a folder, the &lt;code&gt;x&lt;/code&gt; permission doesn&amp;rsquo;t mean &amp;ldquo;run&amp;rdquo;, it means &amp;ldquo;walk through&amp;rdquo;. So the group can pass &lt;em&gt;through&lt;/em&gt; the server folder to reach &lt;code&gt;logs&lt;/code&gt;, but if it tries to list that folder it gets permission denied. The &lt;code&gt;mods&lt;/code&gt; and &lt;code&gt;config&lt;/code&gt; folders aren&amp;rsquo;t just blocked, they&amp;rsquo;re invisible.&lt;/p&gt;
+&lt;p&gt;The last line matters too: it makes new files inherit the access, so tomorrow&amp;rsquo;s log file is readable without running any of this again.&lt;/p&gt;
+&lt;p&gt;One honest caveat: if a modpack swap ever deletes and recreates the &lt;code&gt;logs&lt;/code&gt; folder itself, these ACLs go with it, which is the same trap I dinged the mirror idea for. The difference is how it fails. The mirror would quietly keep serving stale logs, while this setup just starts returning permission denied until I rerun the &lt;code&gt;setfacl&lt;/code&gt; lines. I&amp;rsquo;ll take a loud failure over a quiet lie.&lt;/p&gt;
+&lt;p&gt;Check it worked:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;getfacl &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$V&lt;/span&gt;&lt;span class="s2"&gt;/&lt;/span&gt;&lt;span class="nv"&gt;$U&lt;/span&gt;&lt;span class="s2"&gt;/logs&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="3-give-the-servers-friendly-names"&gt;3. Give the Servers Friendly Names
+&lt;/h2&gt;&lt;p&gt;&lt;code&gt;/etc/mclogs.conf&lt;/code&gt;:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-fallback" data-lang="fallback"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;modded 00000000-1111-2222-3333-444444444444
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;survival 55555555-6666-7777-8888-999999999999
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Pterodactyl identifies servers by long random IDs. Nobody should have to remember those.&lt;/p&gt;
+&lt;h2 id="4-the-log-reading-script"&gt;4. The Log-Reading Script
+&lt;/h2&gt;&lt;p&gt;This script is Hermes&amp;rsquo; only way into the logs. Six read-only operations, nothing else.&lt;/p&gt;
+&lt;p&gt;&lt;code&gt;/usr/local/bin/mclogs.sh&lt;/code&gt;:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt; 1
+&lt;/span&gt;&lt;span class="lnt"&gt; 2
+&lt;/span&gt;&lt;span class="lnt"&gt; 3
+&lt;/span&gt;&lt;span class="lnt"&gt; 4
+&lt;/span&gt;&lt;span class="lnt"&gt; 5
+&lt;/span&gt;&lt;span class="lnt"&gt; 6
+&lt;/span&gt;&lt;span class="lnt"&gt; 7
+&lt;/span&gt;&lt;span class="lnt"&gt; 8
+&lt;/span&gt;&lt;span class="lnt"&gt; 9
+&lt;/span&gt;&lt;span class="lnt"&gt;10
+&lt;/span&gt;&lt;span class="lnt"&gt;11
+&lt;/span&gt;&lt;span class="lnt"&gt;12
+&lt;/span&gt;&lt;span class="lnt"&gt;13
+&lt;/span&gt;&lt;span class="lnt"&gt;14
+&lt;/span&gt;&lt;span class="lnt"&gt;15
+&lt;/span&gt;&lt;span class="lnt"&gt;16
+&lt;/span&gt;&lt;span class="lnt"&gt;17
+&lt;/span&gt;&lt;span class="lnt"&gt;18
+&lt;/span&gt;&lt;span class="lnt"&gt;19
+&lt;/span&gt;&lt;span class="lnt"&gt;20
+&lt;/span&gt;&lt;span class="lnt"&gt;21
+&lt;/span&gt;&lt;span class="lnt"&gt;22
+&lt;/span&gt;&lt;span class="lnt"&gt;23
+&lt;/span&gt;&lt;span class="lnt"&gt;24
+&lt;/span&gt;&lt;span class="lnt"&gt;25
+&lt;/span&gt;&lt;span class="lnt"&gt;26
+&lt;/span&gt;&lt;span class="lnt"&gt;27
+&lt;/span&gt;&lt;span class="lnt"&gt;28
+&lt;/span&gt;&lt;span class="lnt"&gt;29
+&lt;/span&gt;&lt;span class="lnt"&gt;30
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="cp"&gt;#!/bin/bash
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;set&lt;/span&gt; -u
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nv"&gt;V&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;/var/lib/pterodactyl/volumes
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nv"&gt;CAP&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="m"&gt;150000&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nv"&gt;n&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;1&lt;/span&gt;&lt;span class="k"&gt;:-&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nv"&gt;m&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;2&lt;/span&gt;&lt;span class="k"&gt;:-&lt;/span&gt;&lt;span class="nv"&gt;tail&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nv"&gt;a&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;3&lt;/span&gt;&lt;span class="k"&gt;:-&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nv"&gt;u&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="k"&gt;$(&lt;/span&gt;awk -v &lt;span class="nv"&gt;n&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$n&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="s1"&gt;&amp;#39;$1==n{print $2}&amp;#39;&lt;/span&gt; /etc/mclogs.conf&lt;span class="k"&gt;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="o"&gt;[[&lt;/span&gt; -n &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$u&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="o"&gt;]]&lt;/span&gt; &lt;span class="o"&gt;||&lt;/span&gt; &lt;span class="o"&gt;{&lt;/span&gt; &lt;span class="nb"&gt;echo&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;servers:&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; awk &lt;span class="s1"&gt;&amp;#39;{print &amp;#34; &amp;#34;$1}&amp;#39;&lt;/span&gt; /etc/mclogs.conf&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nb"&gt;exit&lt;/span&gt; 1&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="o"&gt;}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nv"&gt;D&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="nv"&gt;$V&lt;/span&gt;/&lt;span class="nv"&gt;$u&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nv"&gt;L&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="nv"&gt;$D&lt;/span&gt;/logs/latest.log
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;case&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$m&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; in
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; tail&lt;span class="o"&gt;)&lt;/span&gt; &lt;span class="o"&gt;[[&lt;/span&gt; -f &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$L&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="o"&gt;]]&lt;/span&gt; &lt;span class="o"&gt;||&lt;/span&gt; &lt;span class="o"&gt;{&lt;/span&gt; &lt;span class="nb"&gt;echo&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;latest.log missing&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nb"&gt;exit&lt;/span&gt; 1&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="o"&gt;}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; tail -n &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;a&lt;/span&gt;&lt;span class="k"&gt;:-&lt;/span&gt;&lt;span class="nv"&gt;200&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$L&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="p"&gt;;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; crash&lt;span class="o"&gt;)&lt;/span&gt; &lt;span class="nv"&gt;f&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="k"&gt;$(&lt;/span&gt;ls -t &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$D&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;/crash-reports/*.txt 2&amp;gt;/dev/null &lt;span class="p"&gt;|&lt;/span&gt; head -1&lt;span class="k"&gt;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="o"&gt;[[&lt;/span&gt; -n &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;f&lt;/span&gt;&lt;span class="k"&gt;:-&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="o"&gt;]]&lt;/span&gt; &lt;span class="o"&gt;&amp;amp;&amp;amp;&lt;/span&gt; head -n &lt;span class="m"&gt;150&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$f&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="o"&gt;||&lt;/span&gt; &lt;span class="nb"&gt;echo&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;no crash reports&amp;#34;&lt;/span&gt; &lt;span class="p"&gt;;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; lag&lt;span class="o"&gt;)&lt;/span&gt; grep -E &lt;span class="s2"&gt;&amp;#34;Can&amp;#39;t keep up|running behind|watchdog|Spark|TPS&amp;#34;&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$L&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="p"&gt;|&lt;/span&gt; tail -n &lt;span class="m"&gt;80&lt;/span&gt; &lt;span class="p"&gt;;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; list&lt;span class="o"&gt;)&lt;/span&gt; ls -t &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$D&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;/logs/ &lt;span class="p"&gt;|&lt;/span&gt; head -40 &lt;span class="p"&gt;;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; old&lt;span class="o"&gt;)&lt;/span&gt; &lt;span class="o"&gt;[[&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$a&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt;~ ^&lt;span class="o"&gt;[&lt;/span&gt;0-9.-&lt;span class="o"&gt;]&lt;/span&gt;+&lt;span class="se"&gt;\.&lt;/span&gt;log&lt;span class="se"&gt;\.&lt;/span&gt;gz$ &lt;span class="o"&gt;]]&lt;/span&gt; &lt;span class="o"&gt;||&lt;/span&gt; &lt;span class="o"&gt;{&lt;/span&gt; &lt;span class="nb"&gt;echo&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;bad filename&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nb"&gt;exit&lt;/span&gt; 1&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="o"&gt;}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; zcat &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$D&lt;/span&gt;&lt;span class="s2"&gt;/logs/&lt;/span&gt;&lt;span class="nv"&gt;$a&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; 2&amp;gt;/dev/null &lt;span class="p"&gt;|&lt;/span&gt; tail -n &lt;span class="m"&gt;200&lt;/span&gt; &lt;span class="o"&gt;||&lt;/span&gt; &lt;span class="nb"&gt;echo&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;no such file&amp;#34;&lt;/span&gt; &lt;span class="p"&gt;;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; search&lt;span class="o"&gt;)&lt;/span&gt; &lt;span class="nv"&gt;gz&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="k"&gt;$(&lt;/span&gt;ls -t &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$D&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;/logs/*.log.gz 2&amp;gt;/dev/null &lt;span class="p"&gt;|&lt;/span&gt; head -20&lt;span class="k"&gt;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="o"&gt;{&lt;/span&gt; grep -F -e &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$a&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$L&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; 2&amp;gt;/dev/null
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="o"&gt;[[&lt;/span&gt; -n &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$gz&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="o"&gt;]]&lt;/span&gt; &lt;span class="o"&gt;&amp;amp;&amp;amp;&lt;/span&gt; zgrep -F -e &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$a&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="nv"&gt;$gz&lt;/span&gt; 2&amp;gt;/dev/null &lt;span class="o"&gt;||&lt;/span&gt; &lt;span class="nb"&gt;true&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="o"&gt;}&lt;/span&gt; &lt;span class="p"&gt;|&lt;/span&gt; tail -n &lt;span class="m"&gt;100&lt;/span&gt; &lt;span class="p"&gt;;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; *&lt;span class="o"&gt;)&lt;/span&gt; &lt;span class="nb"&gt;echo&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;usage: mclogs &amp;lt;server&amp;gt; [tail N|crash|lag|list|old &amp;lt;file&amp;gt;|search &amp;lt;term&amp;gt;]&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nb"&gt;exit&lt;/span&gt; &lt;span class="m"&gt;1&lt;/span&gt; &lt;span class="p"&gt;;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;esac&lt;/span&gt; &lt;span class="p"&gt;|&lt;/span&gt; head -c &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$CAP&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nv"&gt;rc&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;PIPESTATUS&lt;/span&gt;&lt;span class="p"&gt;[0]&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="o"&gt;[[&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$rc&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;141&amp;#34;&lt;/span&gt; &lt;span class="o"&gt;]]&lt;/span&gt; &lt;span class="o"&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span class="nv"&gt;rc&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="m"&gt;0&lt;/span&gt; &lt;span class="c1"&gt;# killed by the cap, output is fine&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;exit&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$rc&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo chown root:mclogs /usr/local/bin/mclogs.sh
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo chmod &lt;span class="m"&gt;750&lt;/span&gt; /usr/local/bin/mclogs.sh
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;A few things in there I made sure of:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Folder paths come from the config file, never from what&amp;rsquo;s typed in.&lt;/strong&gt; Hermes picks a server by name; it can&amp;rsquo;t hand over a path of its own.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;old&lt;/code&gt; checks the filename first&lt;/strong&gt;, so something like &lt;code&gt;../../config/whatever&lt;/code&gt; can&amp;rsquo;t sneak through.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;The last line cuts every answer off at 150 KB.&lt;/strong&gt; Minecraft keeps writing to one log file until the server restarts, and it can get very large. Without a hard limit, a single request can be too big for the AI to read and expensive to send.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;blockquote&gt;
+&lt;p&gt;Old logs are stored compressed as &lt;code&gt;2026-07-25-3.log.gz&lt;/code&gt;, the third server start on that date. Handy detail: after a crash, the crash itself is at the end of the &lt;em&gt;previous&lt;/em&gt; numbered file, not the start of the new one.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id="5-the-wrapper-that-hands-over-the-group"&gt;5. The Wrapper That Hands Over the Group
+&lt;/h2&gt;&lt;p&gt;The script needs to run with the &lt;code&gt;mclogs&lt;/code&gt; group even though the account calling it isn&amp;rsquo;t in that group. Linux has a flag for exactly this, but it ignores it on shell scripts, on purpose, because they&amp;rsquo;re too easy to abuse. So a tiny compiled program goes in front.&lt;/p&gt;
+&lt;p&gt;The obvious version doesn&amp;rsquo;t work:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-c" data-lang="c"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nf"&gt;execv&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;#34;/usr/local/bin/mclogs.sh&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;argv&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt; &lt;span class="c1"&gt;// permission denied
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;&lt;strong&gt;Bash gives up the extra group as soon as it starts, unless you pass &lt;code&gt;-p&lt;/code&gt;.&lt;/strong&gt; That&amp;rsquo;s the whole fix, and I lost a good hour to it.&lt;/p&gt;
+&lt;p&gt;&lt;code&gt;/usr/local/src/mclogs-wrapper.c&lt;/code&gt;:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt; 1
+&lt;/span&gt;&lt;span class="lnt"&gt; 2
+&lt;/span&gt;&lt;span class="lnt"&gt; 3
+&lt;/span&gt;&lt;span class="lnt"&gt; 4
+&lt;/span&gt;&lt;span class="lnt"&gt; 5
+&lt;/span&gt;&lt;span class="lnt"&gt; 6
+&lt;/span&gt;&lt;span class="lnt"&gt; 7
+&lt;/span&gt;&lt;span class="lnt"&gt; 8
+&lt;/span&gt;&lt;span class="lnt"&gt; 9
+&lt;/span&gt;&lt;span class="lnt"&gt;10
+&lt;/span&gt;&lt;span class="lnt"&gt;11
+&lt;/span&gt;&lt;span class="lnt"&gt;12
+&lt;/span&gt;&lt;span class="lnt"&gt;13
+&lt;/span&gt;&lt;span class="lnt"&gt;14
+&lt;/span&gt;&lt;span class="lnt"&gt;15
+&lt;/span&gt;&lt;span class="lnt"&gt;16
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-c" data-lang="c"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="cp"&gt;#include&lt;/span&gt; &lt;span class="cpf"&gt;&amp;lt;unistd.h&amp;gt;&lt;/span&gt;&lt;span class="cp"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="kt"&gt;int&lt;/span&gt; &lt;span class="nf"&gt;main&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="kt"&gt;int&lt;/span&gt; &lt;span class="n"&gt;argc&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="kt"&gt;char&lt;/span&gt; &lt;span class="o"&gt;**&lt;/span&gt;&lt;span class="n"&gt;argv&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="kt"&gt;char&lt;/span&gt; &lt;span class="o"&gt;*&lt;/span&gt;&lt;span class="n"&gt;args&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="n"&gt;argc&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="mi"&gt;3&lt;/span&gt;&lt;span class="p"&gt;];&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="kt"&gt;char&lt;/span&gt; &lt;span class="o"&gt;*&lt;/span&gt;&lt;span class="n"&gt;env&lt;/span&gt;&lt;span class="p"&gt;[]&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="s"&gt;&amp;#34;PATH=/usr/local/bin:/usr/bin:/bin&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="s"&gt;&amp;#34;IFS= &lt;/span&gt;&lt;span class="se"&gt;\t\n&lt;/span&gt;&lt;span class="s"&gt;&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="s"&gt;&amp;#34;LC_ALL=C&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nb"&gt;NULL&lt;/span&gt; &lt;span class="p"&gt;};&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="n"&gt;args&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="s"&gt;&amp;#34;/bin/bash&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="n"&gt;args&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="s"&gt;&amp;#34;-p&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="n"&gt;args&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;2&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="s"&gt;&amp;#34;/usr/local/bin/mclogs.sh&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="k"&gt;for&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="kt"&gt;int&lt;/span&gt; &lt;span class="n"&gt;i&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="n"&gt;i&lt;/span&gt; &lt;span class="o"&gt;&amp;lt;&lt;/span&gt; &lt;span class="n"&gt;argc&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="n"&gt;i&lt;/span&gt;&lt;span class="o"&gt;++&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="n"&gt;args&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="n"&gt;i&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="mi"&gt;2&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;argv&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="n"&gt;i&lt;/span&gt;&lt;span class="p"&gt;];&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="n"&gt;args&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="n"&gt;argc&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="mi"&gt;2&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;NULL&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nf"&gt;execve&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;&amp;#34;/bin/bash&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;args&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;env&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo gcc -o /usr/local/bin/mclogs /usr/local/src/mclogs-wrapper.c
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo chown root:mclogs /usr/local/bin/mclogs
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo chmod &lt;span class="m"&gt;2755&lt;/span&gt; /usr/local/bin/mclogs
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;The hardcoded &lt;code&gt;env&lt;/code&gt; list is there for a reason. &lt;code&gt;-p&lt;/code&gt; blocks most ways of smuggling things in, but it doesn&amp;rsquo;t reset &lt;code&gt;PATH&lt;/code&gt;, the list of folders Linux searches for commands. The script calls &lt;code&gt;tail&lt;/code&gt;, &lt;code&gt;awk&lt;/code&gt; and &lt;code&gt;zcat&lt;/code&gt; by name, so without this, someone could point &lt;code&gt;PATH&lt;/code&gt; at their own folder and get their version to run instead.&lt;/p&gt;
+&lt;h2 id="6-check-it"&gt;6. Check It
+&lt;/h2&gt;&lt;p&gt;Should work:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo -u hermes-staff mclogs modded list
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo -u hermes-staff mclogs modded tail &lt;span class="m"&gt;20&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Should all fail:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo -u hermes-staff ls /var/lib/pterodactyl/volumes
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo -u hermes-staff cat &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$V&lt;/span&gt;&lt;span class="s2"&gt;/&lt;/span&gt;&lt;span class="nv"&gt;$U&lt;/span&gt;&lt;span class="s2"&gt;/server.properties&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;And this one should still &lt;em&gt;work&lt;/em&gt;, even though it looks like an attack:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo -u hermes-staff env &lt;span class="nv"&gt;PATH&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;/tmp /usr/local/bin/mclogs modded list
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;That&amp;rsquo;s the whole point of the wrapper: it throws away the caller&amp;rsquo;s environment, so even if someone points &lt;code&gt;PATH&lt;/code&gt; at a folder full of fake &lt;code&gt;tail&lt;/code&gt; and &lt;code&gt;awk&lt;/code&gt; binaries, the real ones run anyway. If this command errors out instead of listing logs, the env pinning in the wrapper isn&amp;rsquo;t doing its job.&lt;/p&gt;
+&lt;p&gt;Poking around with the powerless account also turned up a completely unrelated problem: the panel&amp;rsquo;s &lt;code&gt;.env&lt;/code&gt; file was readable by every account on the machine, database password and app key included, and had been since install. Nobody noticed because the new account was the first thing that ever went looking. It&amp;rsquo;s &lt;code&gt;640 root:www-data&lt;/code&gt; now, and the database password and app key were rotated on the assumption that anything readable by every local account since install should be treated as already leaked.&lt;/p&gt;
+&lt;p&gt;Turns out making an account with no power and poking around with it is a pretty cheap way to audit the rest of the machine.&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="what-it-actually-looks-like"&gt;What It Actually Looks Like
+&lt;/h2&gt;&lt;p&gt;The agent itself is a general-purpose one, with a pile of tools that have nothing to do with Minecraft. None of that matters here: on this machine, &lt;code&gt;mclogs&lt;/code&gt; is the only tool that reaches anything. Here it is starting up as &lt;code&gt;hermes-staff&lt;/code&gt;:&lt;/p&gt;
+&lt;p&gt;&lt;img src="https://rhythmdev.me/p/ai-agent-minecraft-logs/hermes-agent-startup.webp"
+width="1920"
+height="1982"
+srcset="https://rhythmdev.me/p/ai-agent-minecraft-logs/hermes-agent-startup_hu_93655d65bde8bb0d.webp 480w, https://rhythmdev.me/p/ai-agent-minecraft-logs/hermes-agent-startup_hu_dbc32a3a8bb790.webp 1024w"
+loading="lazy"
+alt="The Hermes agent starting in a terminal, showing its available skills and then listing the Minecraft servers it can pull logs for"
+class="gallery-image"
+data-flex-grow="96"
+data-flex-basis="232px"
+&gt;&lt;/p&gt;
+&lt;p&gt;The bare &lt;code&gt;mclogs&lt;/code&gt; call at the top exits 1 on purpose. With no arguments it prints the server list out of &lt;code&gt;/etc/mclogs.conf&lt;/code&gt;, so the agent discovers what exists instead of me pasting server names into its prompt.&lt;/p&gt;
+&lt;h2 id="in-discord"&gt;In Discord
+&lt;/h2&gt;&lt;p&gt;Staff shouldn&amp;rsquo;t need an SSH key to ask why a server crashed, so Hermes also runs as a bot in our staff channel, where staff have it going by Lag Detective.&lt;/p&gt;
+&lt;p&gt;&lt;img src="https://rhythmdev.me/p/ai-agent-minecraft-logs/hermes-discord.webp"
+width="1920"
+height="1373"
+srcset="https://rhythmdev.me/p/ai-agent-minecraft-logs/hermes-discord_hu_e46ad16f1b6e3a8d.webp 480w, https://rhythmdev.me/p/ai-agent-minecraft-logs/hermes-discord_hu_2d6a32d1640b4e0f.webp 1024w"
+loading="lazy"
+alt="Hermes answering a question about server health in Discord"
+class="gallery-image"
+data-flex-grow="139"
+data-flex-basis="335px"
+&gt;&lt;/p&gt;
+&lt;p&gt;The bot runs as the same powerless account as before. It widens who can talk to the agent, not what the agent can reach.&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="left-out-on-purpose"&gt;Left Out on Purpose
+&lt;/h2&gt;&lt;p&gt;&lt;strong&gt;Running commands in-game.&lt;/strong&gt; Pterodactyl&amp;rsquo;s API can send commands to a server, which would let Hermes run &lt;code&gt;/spark health&lt;/code&gt; itself when someone asks about lag. But that permission is all-or-nothing, and the same access also covers &lt;code&gt;/op&lt;/code&gt;, &lt;code&gt;/ban&lt;/code&gt; and &lt;code&gt;/stop&lt;/code&gt;. So instead, a staff member runs the command and Hermes reads the result out of the log. It costs a staff member maybe ten seconds, and I can live with that.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Containers or a separate VM.&lt;/strong&gt; A VM would be a real improvement, since the panel and the game servers currently share a machine with Hermes. But once the agent&amp;rsquo;s account can&amp;rsquo;t read anything on the box that matters, the extra isolation doesn&amp;rsquo;t buy much anymore. I&amp;rsquo;ll bother with it the day Hermes is allowed to change files.&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="key-takeaways"&gt;Key Takeaways
+&lt;/h2&gt;&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Give the agent a tool, not access.&lt;/strong&gt; It can still run whatever it likes; the point is that almost nothing it runs gets anywhere. One command with six fixed operations is way easier to reason about than a filesystem with parts removed.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;If your plan involves listing every file to block, flip it around&lt;/strong&gt; and only allow what&amp;rsquo;s needed.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Rules in a prompt are a suggestion, not a limit&lt;/strong&gt;, especially when anyone who joins the server can write into the input.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;If a setgid wrapper mysteriously does nothing, try &lt;code&gt;bash -p&lt;/code&gt;.&lt;/strong&gt; Would have saved me an hour.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Put a size limit on anything an AI reads.&lt;/strong&gt; Context limits and API bills are both real.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Now that the plumbing is done, the agent side is honestly the easy part. Hermes has a shell and it uses it, but it&amp;rsquo;s a shell with nothing in reach: the logs come back, and everything else on the machine answers with permission denied.&lt;/p&gt;</description></item></channel></rss>

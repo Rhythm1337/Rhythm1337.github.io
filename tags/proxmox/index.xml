@@ -1,0 +1,347 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Proxmox on Rhythm Chaudhary</title><link>https://rhythmdev.me/tags/proxmox/</link><description>Recent content in Proxmox on Rhythm Chaudhary</description><generator>Hugo -- gohugo.io</generator><language>en-us</language><lastBuildDate>Sat, 29 Aug 2026 00:00:00 +0530</lastBuildDate><atom:link href="https://rhythmdev.me/tags/proxmox/index.xml" rel="self" type="application/rss+xml"/><item><title>Running a Frankenstein GPU in Proxmox with LXC</title><link>https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/</link><pubDate>Sat, 29 Aug 2026 00:00:00 +0530</pubDate><guid>https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/</guid><description>&lt;img src="https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/proxmox-server.webp" alt="Featured image of post Running a Frankenstein GPU in Proxmox with LXC" /&gt;&lt;p&gt;I set up an AI server on Proxmox using a laptop GPU mounted in a desktop machine. It works well,
+but not the way I expected. The card can&amp;rsquo;t be passed through to a virtual machine at all. It runs
+in an LXC container instead.&lt;/p&gt;
+&lt;p&gt;This is the full setup, start to a working Unsloth install. There&amp;rsquo;s a short note at the end on why
+the VM route doesn&amp;rsquo;t work.&lt;/p&gt;
+&lt;h2 id="the-card"&gt;The card
+&lt;/h2&gt;&lt;p&gt;An &lt;strong&gt;NVIDIA RTX A5500 Laptop GPU&lt;/strong&gt;: GA103GLM, 16 GB, Ampere, compute capability 8.6. Mobile
+silicon pulled from a workstation laptop and mounted on a desktop board.&lt;/p&gt;
+&lt;p&gt;&lt;img src="https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/gpu-card.webp"
+width="680"
+height="760"
+srcset="https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/gpu-card_hu_9842e6b04b3b577e.webp 480w, https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/gpu-card_hu_9c9206689ee52ffb.webp 1024w"
+loading="lazy"
+alt="The RTX A5500 Laptop GPU, out of the box"
+class="gallery-image"
+data-flex-grow="89"
+data-flex-basis="214px"
+&gt;&lt;/p&gt;
+&lt;p&gt;Mounted on a desktop board it looks ordinary enough. Proxmox sees it fine:&lt;/p&gt;
+&lt;p&gt;&lt;img src="https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/01-gpu-lspci.png"
+width="1622"
+height="224"
+srcset="https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/01-gpu-lspci_hu_ea21bedabd5122b5.png 480w, https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/01-gpu-lspci_hu_db5e4ea9534b8f7b.png 1024w"
+loading="lazy"
+alt="Card showing up on Proxmox"
+class="gallery-image"
+data-flex-grow="724"
+data-flex-basis="1737px"
+&gt;&lt;/p&gt;
+&lt;p&gt;Good value: roughly twice the compute of an RTX 3060 with 4 GB more VRAM, which for fine-tuning is
+the difference between a 13B model being painful and being comfortable.&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Proxmox VE 9.2.9, kernel 7.0.14-8-pve&lt;/li&gt;
+&lt;li&gt;NVIDIA driver 595.91.07, open kernel module&lt;/li&gt;
+&lt;li&gt;Ubuntu 24.04 in a privileged LXC container&lt;/li&gt;
+&lt;li&gt;Unsloth for training and inference&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id="why-a-container"&gt;Why a container
+&lt;/h2&gt;&lt;p&gt;A container shares the host&amp;rsquo;s kernel. So the driver gets installed once on the Proxmox host, and
+the container borrows the device nodes. No hypervisor in the middle, which means no performance
+loss and none of the passthrough complexity.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;span class="lnt"&gt;8
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-fallback" data-lang="fallback"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;Proxmox host
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;├── NVIDIA driver + kernel module
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;├── /dev/nvidia0, nvidiactl, nvidia-uvm
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;│
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;└── LXC container (Ubuntu 24.04)
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; ├── device nodes shared from host
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; ├── NVIDIA userspace only (no kernel module)
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; └── PyTorch + Unsloth
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id="driver-on-the-host"&gt;Driver on the host
+&lt;/h2&gt;&lt;p&gt;Two things to know first.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Take a recent driver.&lt;/strong&gt; I tried 580 and it wouldn&amp;rsquo;t compile because the kernel had changed a macro
+that 580&amp;rsquo;s source still used the old way. 595 built fine. On a new kernel, use the newest driver
+rather than whatever an older guide recommends.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Skip the distro packages.&lt;/strong&gt; Debian ships 550, too old here. Ubuntu&amp;rsquo;s is 595.71.05, close to but
+not the same as 595.91.07, and host and container versions have to match exactly or CUDA reports
+a driver/library mismatch. NVIDIA&amp;rsquo;s &lt;code&gt;.run&lt;/code&gt; installer on both sides avoids that entirely.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;apt install -y pve-headers-&lt;span class="k"&gt;$(&lt;/span&gt;uname -r&lt;span class="k"&gt;)&lt;/span&gt; build-essential dkms
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;echo&lt;/span&gt; -e &lt;span class="s2"&gt;&amp;#34;blacklist nouveau\noptions nouveau modeset=0&amp;#34;&lt;/span&gt; &amp;gt; /etc/modprobe.d/blacklist-nouveau.conf
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;update-initramfs -u -k all
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;reboot
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;After the reboot:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;wget https://download.nvidia.com/XFree86/Linux-x86_64/595.91.07/NVIDIA-Linux-x86_64-595.91.07.run
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;chmod +x NVIDIA-Linux-x86_64-595.91.07.run
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;./NVIDIA-Linux-x86_64-595.91.07.run --dkms --no-x-check
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Choose the &lt;strong&gt;MIT/GPL&lt;/strong&gt; kernel module (the open one, correct for Ampere), no 32-bit libraries, and
+&lt;strong&gt;keep the private signing key&lt;/strong&gt;. DKMS uses it to re-sign after kernel upgrades.&lt;/p&gt;
+&lt;p&gt;Then make sure both modules load at boot:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# /etc/modules&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;nvidia
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;nvidia_uvm
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;&lt;code&gt;nvidia_uvm&lt;/code&gt; is easy to miss. Without it &lt;code&gt;nvidia-smi&lt;/code&gt; works fine but &lt;code&gt;torch.cuda.is_available()&lt;/code&gt;
+returns False.&lt;/p&gt;
+&lt;p&gt;&lt;img src="https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/08-nvidia-smi-host.png"
+width="2350"
+height="1184"
+srcset="https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/08-nvidia-smi-host_hu_854f36856a77fdff.png 480w, https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/08-nvidia-smi-host_hu_b058d9f84a89fee6.png 1024w"
+loading="lazy"
+alt="nvidia-smi on the Proxmox host"
+class="gallery-image"
+data-flex-grow="198"
+data-flex-basis="476px"
+&gt;&lt;/p&gt;
+&lt;p&gt;If Secure Boot is on, the installer will offer to sign the module, but signing isn&amp;rsquo;t enough, the
+key also has to be enrolled through a MOK Manager screen during boot. Ten second timeout, before
+the OS starts, so no SSH and no web console.&lt;/p&gt;
+&lt;p&gt;&lt;img src="https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/07-key-rejected.png"
+width="2350"
+height="1184"
+srcset="https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/07-key-rejected_hu_51c60745d2e222d0.png 480w, https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/07-key-rejected_hu_530e311f2f3b879b.png 1024w"
+loading="lazy"
+alt="modprobe error: Key was rejected by service"
+class="gallery-image"
+data-flex-grow="198"
+data-flex-basis="476px"
+&gt;&lt;/p&gt;
+&lt;p&gt;The MOK Manager screen bugged out, so we just disabled Secure Boot instead. The module stays signed;
+a system that isn&amp;rsquo;t enforcing ignores the signature.&lt;/p&gt;
+&lt;h2 id="container-config"&gt;Container config
+&lt;/h2&gt;&lt;p&gt;Create it &lt;strong&gt;privileged&lt;/strong&gt;. Unprivileged containers remap user IDs, so container-root isn&amp;rsquo;t real
+root on the host, and the NVIDIA ioctls need real root. Set &lt;code&gt;nesting=1&lt;/code&gt; too because systemd inside the
+container needs it.&lt;/p&gt;
+&lt;p&gt;The GPU isn&amp;rsquo;t visible by default because containers get a minimal &lt;code&gt;/dev&lt;/code&gt;. Add to
+&lt;code&gt;/etc/pve/lxc/&amp;lt;id&amp;gt;.conf&lt;/code&gt;:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-gdscript3" data-lang="gdscript3"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="n"&gt;lxc&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;cgroup2&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;devices&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;allow&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;c&lt;/span&gt; &lt;span class="mi"&gt;195&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="o"&gt;*&lt;/span&gt; &lt;span class="n"&gt;rwm&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="n"&gt;lxc&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;cgroup2&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;devices&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;allow&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;c&lt;/span&gt; &lt;span class="mi"&gt;511&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="o"&gt;*&lt;/span&gt; &lt;span class="n"&gt;rwm&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="n"&gt;lxc&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;mount&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;entry&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="o"&gt;/&lt;/span&gt;&lt;span class="n"&gt;dev&lt;/span&gt;&lt;span class="o"&gt;/&lt;/span&gt;&lt;span class="n"&gt;nvidia0&lt;/span&gt; &lt;span class="n"&gt;dev&lt;/span&gt;&lt;span class="o"&gt;/&lt;/span&gt;&lt;span class="n"&gt;nvidia0&lt;/span&gt; &lt;span class="n"&gt;none&lt;/span&gt; &lt;span class="n"&gt;bind&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="n"&gt;optional&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="n"&gt;create&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="n"&gt;file&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="n"&gt;lxc&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;mount&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;entry&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="o"&gt;/&lt;/span&gt;&lt;span class="n"&gt;dev&lt;/span&gt;&lt;span class="o"&gt;/&lt;/span&gt;&lt;span class="n"&gt;nvidiactl&lt;/span&gt; &lt;span class="n"&gt;dev&lt;/span&gt;&lt;span class="o"&gt;/&lt;/span&gt;&lt;span class="n"&gt;nvidiactl&lt;/span&gt; &lt;span class="n"&gt;none&lt;/span&gt; &lt;span class="n"&gt;bind&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="n"&gt;optional&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="n"&gt;create&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="n"&gt;file&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="n"&gt;lxc&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;mount&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;entry&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="o"&gt;/&lt;/span&gt;&lt;span class="n"&gt;dev&lt;/span&gt;&lt;span class="o"&gt;/&lt;/span&gt;&lt;span class="n"&gt;nvidia&lt;/span&gt;&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="n"&gt;uvm&lt;/span&gt; &lt;span class="n"&gt;dev&lt;/span&gt;&lt;span class="o"&gt;/&lt;/span&gt;&lt;span class="n"&gt;nvidia&lt;/span&gt;&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="n"&gt;uvm&lt;/span&gt; &lt;span class="n"&gt;none&lt;/span&gt; &lt;span class="n"&gt;bind&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="n"&gt;optional&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="n"&gt;create&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="n"&gt;file&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="n"&gt;lxc&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;mount&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;entry&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="o"&gt;/&lt;/span&gt;&lt;span class="n"&gt;dev&lt;/span&gt;&lt;span class="o"&gt;/&lt;/span&gt;&lt;span class="n"&gt;nvidia&lt;/span&gt;&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="n"&gt;uvm&lt;/span&gt;&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="n"&gt;tools&lt;/span&gt; &lt;span class="n"&gt;dev&lt;/span&gt;&lt;span class="o"&gt;/&lt;/span&gt;&lt;span class="n"&gt;nvidia&lt;/span&gt;&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="n"&gt;uvm&lt;/span&gt;&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="n"&gt;tools&lt;/span&gt; &lt;span class="n"&gt;none&lt;/span&gt; &lt;span class="n"&gt;bind&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="n"&gt;optional&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="n"&gt;create&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="n"&gt;file&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;The &lt;code&gt;devices.allow&lt;/code&gt; lines grant access by major number: 195 is the NVIDIA device, 511 is
+nvidia-uvm. The &lt;code&gt;rwm&lt;/code&gt; includes mknod, which matters: NVIDIA&amp;rsquo;s device nodes are created on first
+driver use rather than at module load, so after a cold boot they often don&amp;rsquo;t exist yet and the
+bind mounts quietly skip. The container works anyway because it creates its own nodes using that
+mknod permission.&lt;/p&gt;
+&lt;p&gt;Two traps:&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;The uvm major number is dynamic.&lt;/strong&gt; 511 today, possibly different after a host reboot. If the
+container loses GPU access, check that first. Allowing 508–511 is cheap insurance.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Put these lines at the top of the config.&lt;/strong&gt; Anything below a &lt;code&gt;[snapshot-name]&lt;/code&gt; header belongs to
+that snapshot and is ignored by the running container.&lt;/p&gt;
+&lt;h2 id="driver-in-the-container"&gt;Driver in the container
+&lt;/h2&gt;&lt;p&gt;Userspace only. The container uses the host&amp;rsquo;s kernel module:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# on the host&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;pct push &lt;span class="m"&gt;100&lt;/span&gt; /root/NVIDIA-Linux-x86_64-595.91.07.run /root/NVIDIA-Linux-x86_64-595.91.07.run
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# in the container&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;apt install -y build-essential
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;chmod +x /root/NVIDIA-Linux-x86_64-595.91.07.run
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;/root/NVIDIA-Linux-x86_64-595.91.07.run --no-kernel-module --no-x-check --silent
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;&lt;code&gt;--no-kernel-module&lt;/code&gt; is the flag that makes this work. Reusing the same installer file guarantees
+the versions match.&lt;/p&gt;
+&lt;p&gt;&lt;img src="https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/09-nvidia-smi-container.png"
+width="2346"
+height="1198"
+srcset="https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/09-nvidia-smi-container_hu_9ba412867b7105cb.png 480w, https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/09-nvidia-smi-container_hu_37989821abbff860.png 1024w"
+loading="lazy"
+alt="nvidia-smi inside the LXC container"
+class="gallery-image"
+data-flex-grow="195"
+data-flex-basis="469px"
+&gt;&lt;/p&gt;
+&lt;p&gt;Full 16 GB, same driver as the host, and no virtualization layer means the same throughput a
+bare-metal install would get.&lt;/p&gt;
+&lt;h2 id="unsloth"&gt;Unsloth
+&lt;/h2&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;curl -fsSL https://unsloth.ai/install.sh &lt;span class="p"&gt;|&lt;/span&gt; sh
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;It sets up its own Python environment and pulls the matching PyTorch build.&lt;/p&gt;
+&lt;img src="unsloth-gpu-detected.png" width="1024" height="450" alt="Unsloth installer reporting NVIDIA GPU detected" loading="lazy"&gt;
+&lt;p&gt;Set a password before doing anything else. Studio has no auth until you do:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;unsloth studio reset-password
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;It prints a generated password. You&amp;rsquo;ll be asked to change it on first login.&lt;/p&gt;
+&lt;p&gt;Studio binds to localhost by default, so to reach it from another machine:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;unsloth studio -H 0.0.0.0 -p &lt;span class="m"&gt;8888&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;That serves it unauthenticated-on-the-network until you&amp;rsquo;ve set the password, so do that first. If
+you&amp;rsquo;d rather not open a port at all, &lt;code&gt;--secure&lt;/code&gt; exposes it only through a Cloudflare HTTPS tunnel
+and fails closed if the tunnel can&amp;rsquo;t start.&lt;/p&gt;
+&lt;h3 id="making-it-persistent"&gt;Making it persistent
+&lt;/h3&gt;&lt;p&gt;Started from a shell, Studio dies when you close the session. A systemd unit inside the container
+fixes it:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt; 1
+&lt;/span&gt;&lt;span class="lnt"&gt; 2
+&lt;/span&gt;&lt;span class="lnt"&gt; 3
+&lt;/span&gt;&lt;span class="lnt"&gt; 4
+&lt;/span&gt;&lt;span class="lnt"&gt; 5
+&lt;/span&gt;&lt;span class="lnt"&gt; 6
+&lt;/span&gt;&lt;span class="lnt"&gt; 7
+&lt;/span&gt;&lt;span class="lnt"&gt; 8
+&lt;/span&gt;&lt;span class="lnt"&gt; 9
+&lt;/span&gt;&lt;span class="lnt"&gt;10
+&lt;/span&gt;&lt;span class="lnt"&gt;11
+&lt;/span&gt;&lt;span class="lnt"&gt;12
+&lt;/span&gt;&lt;span class="lnt"&gt;13
+&lt;/span&gt;&lt;span class="lnt"&gt;14
+&lt;/span&gt;&lt;span class="lnt"&gt;15
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-ini" data-lang="ini"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# /etc/systemd/system/unsloth-studio.service&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;[Unit]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;Description&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;Unsloth Studio&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;After&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;network-online.target&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;Wants&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;network-online.target&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;[Service]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;Type&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;simple&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;WorkingDirectory&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;/root&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;ExecStart&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;/root/.unsloth/studio/unsloth_studio/bin/unsloth studio -H 0.0.0.0 -p 8888&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;Restart&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;on-failure&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;RestartSec&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;10&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;[Install]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="na"&gt;WantedBy&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s"&gt;multi-user.target&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl daemon-reload
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;systemctl &lt;span class="nb"&gt;enable&lt;/span&gt; --now unsloth-studio
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Check &lt;code&gt;which unsloth&lt;/code&gt; for the real path. It&amp;rsquo;s inside the venv Unsloth creates.&lt;/p&gt;
+&lt;h2 id="testing-that-it-all-survives-a-reboot"&gt;Testing that it all survives a reboot
+&lt;/h2&gt;&lt;p&gt;Worth doing rather than assuming. Reboot the host, wait, then run &lt;code&gt;nvidia-smi&lt;/code&gt; &lt;strong&gt;inside the
+container as the very first command&lt;/strong&gt;, before touching anything on the host.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;pct &lt;span class="nb"&gt;exec&lt;/span&gt; &lt;span class="m"&gt;100&lt;/span&gt; -- nvidia-smi
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;pct &lt;span class="nb"&gt;exec&lt;/span&gt; &lt;span class="m"&gt;100&lt;/span&gt; -- ip a
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;curl -I http://&amp;lt;container-ip&amp;gt;:8888
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;If all three work with no manual intervention, the setup is genuinely persistent. Doing it in this
+order also proves the container is creating its own device nodes rather than relying on the host
+having initialised the GPU first.&lt;/p&gt;
+&lt;p&gt;Set &lt;code&gt;onboot: 1&lt;/code&gt; on the container or it won&amp;rsquo;t start with the host.&lt;/p&gt;
+&lt;h2 id="what-didnt-work-vm-passthrough"&gt;What didn&amp;rsquo;t work: VM passthrough
+&lt;/h2&gt;&lt;p&gt;The original plan was a VM with PCIe passthrough. Not possible with this card on this board.&lt;/p&gt;
+&lt;p&gt;After correcting the obvious things (a VM needs &lt;strong&gt;q35&lt;/strong&gt; and &lt;strong&gt;OVMF&lt;/strong&gt;, not Proxmox&amp;rsquo;s default
+i440fx and SeaBIOS, which can&amp;rsquo;t do PCIe at all), it still refused to start:&lt;/p&gt;
+&lt;p&gt;&lt;img src="https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/05-interrupt-pin-255.png"
+width="2342"
+height="1184"
+srcset="https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/05-interrupt-pin-255_hu_e889e84cbc8d736.png 480w, https://rhythmdev.me/p/running-a-frankenstein-gpu-in-proxmox-with-lxc/05-interrupt-pin-255_hu_9b3436870db00a0a.png 1024w"
+loading="lazy"
+alt="QEMU error: invalid PCI interrupt pin 255"
+class="gallery-image"
+data-flex-grow="197"
+data-flex-basis="474px"
+&gt;&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-fallback" data-lang="fallback"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;vfio 0000:2b:00.0: invalid PCI interrupt pin 255
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;Every PCI device stores an interrupt pin in its config space. Valid values are 0 to 4. This card
+reports 255: &lt;code&gt;0xff&lt;/code&gt;, an unwritten byte.&lt;/p&gt;
+&lt;p&gt;That field is filled in by platform firmware. In a laptop, ACPI does it. A desktop board has no
+idea this is a laptop part and leaves it blank. QEMU validates it before creating the device, the
+check is compiled in, and there&amp;rsquo;s no flag to skip it. &lt;code&gt;vfio-pci nointxmask=1&lt;/code&gt; doesn&amp;rsquo;t help,
+because the rejection happens in QEMU rather than the kernel driver.&lt;/p&gt;
+&lt;p&gt;Bare metal doesn&amp;rsquo;t care because nothing is remapping the interrupt. The card works fine under Windows
+and would work fine on bare-metal Linux. It&amp;rsquo;s specifically virtualization that breaks.&lt;/p&gt;
+&lt;p&gt;If you need VM passthrough, test on your board before buying: the interrupt pin comes from
+motherboard firmware, so other boards may populate it correctly. If a container is fine, the card
+is a good buy. You lose kernel-level isolation and nothing else.&lt;/p&gt;</description></item></channel></rss>

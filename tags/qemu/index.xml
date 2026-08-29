@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>QEMU on Rhythm Chaudhary</title><link>https://rhythmdev.me/tags/qemu/</link><description>Recent content in QEMU on Rhythm Chaudhary</description><generator>Hugo -- gohugo.io</generator><language>en-us</language><lastBuildDate>Sat, 18 Jul 2026 00:00:00 +0000</lastBuildDate><atom:link href="https://rhythmdev.me/tags/qemu/index.xml" rel="self" type="application/rss+xml"/><item><title>Setting Up a Single Node OpenShift Lab on Fedora</title><link>https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/</link><pubDate>Sat, 18 Jul 2026 00:00:00 +0000</pubDate><guid>https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/</guid><description>&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/cluster-details.png" alt="Featured image of post Setting Up a Single Node OpenShift Lab on Fedora" /&gt;&lt;p&gt;Running a Single Node OpenShift (SNO) cluster locally on KVM/QEMU is doable, but the VM setup matters. If the configuration is off, it usually fails quietly or runs out of resources.&lt;/p&gt;
+&lt;p&gt;This guide shows how I set up the cluster with Red Hat&amp;rsquo;s Assisted Installer, the VM tweaks OpenShift CoreOS (RHCOS) needed on a Fedora host, and the local DNS entries that let me actually reach the cluster.&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="1-generating-the-discovery-iso"&gt;1. Generating the Discovery ISO
+&lt;/h2&gt;&lt;p&gt;The most reliable way to deploy a KVM-based SNO cluster is using the Red Hat Hybrid Cloud Console.&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;Navigate to &lt;a class="link" href="https://cloud.redhat.com" target="_blank" rel="noopener"
+&gt;cloud.redhat.com&lt;/a&gt; and log in.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Go to &lt;strong&gt;OpenShift &amp;gt; Clusters &amp;gt; Create Cluster&lt;/strong&gt;.
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/create-cluster.png"
+width="3488"
+height="1782"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/create-cluster_hu_1f13c3d349a77390.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/create-cluster_hu_da7569087db63a60.png 1024w"
+loading="lazy"
+alt="Clusters list in the Red Hat Hybrid Cloud Console with the Create cluster button"
+class="gallery-image"
+data-flex-grow="195"
+data-flex-basis="469px"
+&gt;&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Select the &lt;strong&gt;Datacenter&lt;/strong&gt; tab and on &lt;strong&gt;Assisted Installer&lt;/strong&gt; click on &lt;strong&gt;create cluster&lt;/strong&gt;.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Configure the initial cluster details:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Cluster Name:&lt;/strong&gt; &lt;code&gt;local-sno&lt;/code&gt; (or your preferred name).&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Base Domain:&lt;/strong&gt; &lt;code&gt;example.com&lt;/code&gt; (or your preferred domain).&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Install single node OpenShift (SNO):&lt;/strong&gt; Ensure this box is checked.
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/cluster-details.png"
+width="3472"
+height="2822"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/cluster-details_hu_70679df080d8a75f.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/cluster-details_hu_8c0164a3a4af1e20.png 1024w"
+loading="lazy"
+alt="Assisted Installer cluster details form with the cluster name, base domain, and Single Node OpenShift selected"
+class="gallery-image"
+data-flex-grow="123"
+data-flex-basis="295px"
+&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Click next and select any operators you want, I am skipping any additional operators right now as I won&amp;rsquo;t have enough ram for my setup.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Click next and in host discovery tab select &lt;strong&gt;add a host&lt;/strong&gt;. Select &lt;strong&gt;Full image file&lt;/strong&gt; as I have noticed it&amp;rsquo;s the most stable for these kinds of setups
+&lt;strong&gt;Inject your SSH Key:&lt;/strong&gt; During the wizard configuration, ensure you paste your host machine&amp;rsquo;s public SSH key (usually &lt;code&gt;~/.ssh/id_rsa.pub&lt;/code&gt;). If you skip this, you will be permanently locked out of the &lt;code&gt;core&lt;/code&gt; user backend later.
+If you don&amp;rsquo;t have a key generated then you can run the following command on the host machine&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;ssh-keygen
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/provisioning-type.png"
+width="1992"
+height="1616"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/provisioning-type_hu_1220c622a77684dc.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/provisioning-type_hu_d6f21aa6c7fe3cd6.png 1024w"
+loading="lazy"
+alt="Add host dialog with the provisioning type set to Full image file and the SSH public key field"
+class="gallery-image"
+data-flex-grow="123"
+data-flex-basis="295px"
+&gt;&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Generate the &lt;strong&gt;Discovery ISO&lt;/strong&gt;. You will mount this ISO to your virtual machine so it can boot and register itself with the Red Hat console.&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;blockquote&gt;
+&lt;p&gt;If the downloaded file is exactly 1024 MB then the file downloaded might be corrupted, make sure to use any kind of download manager as usually no OpenShift image is exactly 1024 MB&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;ol start="8"&gt;
+&lt;li&gt;If your download speed is super slow then I suggest using a download manager like free download manager &lt;a class="link" href="https://www.freedownloadmanager.org/" target="_blank" rel="noopener"
+&gt;freedownloadmanager.org&lt;/a&gt;
+and copy the &lt;strong&gt;Discovery ISO URL&lt;/strong&gt; to the download manager for a faster speed.
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/discovery-iso.png"
+width="1992"
+height="1616"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/discovery-iso_hu_34c4aecc9e705915.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/discovery-iso_hu_4eb91774ad3f1bbc.png 1024w"
+loading="lazy"
+alt="Discovery ISO ready dialog showing the Discovery ISO URL and download command"
+class="gallery-image"
+data-flex-grow="123"
+data-flex-basis="295px"
+&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;hr&gt;
+&lt;h2 id="2-virtual-machine-provisioning--configuration"&gt;2. Virtual Machine Provisioning &amp;amp; Configuration
+&lt;/h2&gt;&lt;p&gt;Creating a standard &amp;ldquo;Next -&amp;gt; Next -&amp;gt; Finish&amp;rdquo; VM in &lt;code&gt;virt-manager&lt;/code&gt; will fail for OpenShift. You must carefully define the hardware limits and edit the underlying XML before the first boot.&lt;/p&gt;
+&lt;h3 id="step-21-initial-hardware-allocation"&gt;Step 2.1: Initial Hardware Allocation
+&lt;/h3&gt;&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;CPU:&lt;/strong&gt; 8 - 16 vCPUs. &lt;em&gt;(Note: If your device allows, select more during installation as it can help speed up the process.)&lt;/em&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;RAM:&lt;/strong&gt; 16 GB minimum. &lt;em&gt;(Note: Initial lab attempts using 16 GB of RAM will work, but if you want to run multiple applications at the same time then the ram will become a bottleneck.)&lt;/em&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Storage:&lt;/strong&gt; 150 GB &lt;code&gt;qcow2&lt;/code&gt; sparse image.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Network:&lt;/strong&gt; Default NAT virtual network (&lt;code&gt;virbr0&lt;/code&gt;).&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Boot Media:&lt;/strong&gt; Attach the Discovery ISO downloaded in Step 1 if not yet attached.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;blockquote&gt;
+&lt;p&gt;For &lt;strong&gt;Operating System select&lt;/strong&gt; either rhel9 or 10 unknown or the one at the bottom of the list
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/vm-os-selection.png"
+width="1100"
+height="1166"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/vm-os-selection_hu_e7accf710b4236fb.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/vm-os-selection_hu_9fd8734c47ddb010.png 1024w"
+loading="lazy"
+alt="New VM wizard choosing the Discovery ISO install media and Red Hat Enterprise Linux 9 as the operating system"
+class="gallery-image"
+data-flex-grow="94"
+data-flex-basis="226px"
+&gt;
+Select &lt;strong&gt;customize configuration before install&lt;/strong&gt; as there are some additional configurations that need to be done if you want to customize anything
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/vm-customize-config.png"
+width="1100"
+height="1166"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/vm-customize-config_hu_5ba873e7d1daa0c1.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/vm-customize-config_hu_67299b4e341f0957.png 1024w"
+loading="lazy"
+alt="New VM wizard summary with Customize configuration before install checked"
+class="gallery-image"
+data-flex-grow="94"
+data-flex-basis="226px"
+&gt;&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id="3-installation-and-booting"&gt;3. Installation and Booting
+&lt;/h2&gt;&lt;ol&gt;
+&lt;li&gt;Power on the virtual machine in &lt;code&gt;virt-manager&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;The VM will boot from the Discovery ISO and load the live CoreOS environment into memory.&lt;/li&gt;
+&lt;li&gt;Return to your browser at &lt;code&gt;cloud.redhat.com&lt;/code&gt;. Within a few minutes, your VM will appear in the web console as a discovered host with a &lt;code&gt;Ready&lt;/code&gt; status.
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/host-discovery-ready.png"
+width="3760"
+height="1504"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/host-discovery-ready_hu_3d757fed220f8f0d.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/host-discovery-ready_hu_1fec5da44e3fdc95.png 1024w"
+loading="lazy"
+alt="Assisted Installer host discovery tab showing the discovered host with a Ready status in the host inventory"
+class="gallery-image"
+data-flex-grow="250"
+data-flex-basis="600px"
+&gt;&lt;/li&gt;
+&lt;li&gt;Verify the network settings in the web UI (ensure it picked up an IP address from your KVM NAT network, usually in the &lt;code&gt;192.168.122.x&lt;/code&gt; range).&lt;/li&gt;
+&lt;li&gt;Click &lt;strong&gt;Install Cluster&lt;/strong&gt;.
+&lt;img src="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/review-and-create.png"
+width="2476"
+height="2402"
+srcset="https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/review-and-create_hu_c3f188b6b269a3e5.png 480w, https://rhythmdev.me/p/setting-up-a-single-node-openshift-lab-on-fedora/review-and-create_hu_70979b39daa61e29.png 1024w"
+loading="lazy"
+alt="Review and create page showing the cluster summary and the Install cluster button"
+class="gallery-image"
+data-flex-grow="103"
+data-flex-basis="247px"
+&gt;&lt;/li&gt;
+&lt;li&gt;The installer will format your &lt;code&gt;qcow2&lt;/code&gt; drive, pull down the OpenShift payload, and initiate a reboot.
+&lt;ul&gt;
+&lt;li&gt;&lt;em&gt;Important:&lt;/em&gt; Remove the Discovery ISO from the virtual CD-ROM drive during this reboot so it boots directly from the hard drive.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;To note:&lt;/strong&gt;
+Do not take a VM snapshot while the cluster is still installing or starting up. Taking a snapshot while OpenShift is in an incomplete state will corrupt the etcd database upon restoration. Wait until the cluster finishes entirely (30-45 minutes) and &lt;code&gt;oc get nodes&lt;/code&gt; reports a solid &lt;code&gt;Ready&lt;/code&gt; status before taking your first snapshot.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr&gt;
+&lt;h2 id="4-local-dns-resolution-etchosts"&gt;4. Local DNS Resolution (/etc/hosts)
+&lt;/h2&gt;&lt;p&gt;Because this is a local KVM setup without a dedicated DNS server, your Fedora host does not know how to resolve the OpenShift API or web console URLs to your virtual machine&amp;rsquo;s IP address.&lt;/p&gt;
+&lt;p&gt;You must manually map the cluster routes on your host machine.&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;Find the IP address of your OpenShift VM (e.g., &lt;code&gt;192.168.122.50&lt;/code&gt;).&lt;/li&gt;
+&lt;li&gt;Edit the &lt;code&gt;/etc/hosts&lt;/code&gt; file on your Fedora host:
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sudo nano /etc/hosts
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;Append the following entries. Substitute the IP address with your VM&amp;rsquo;s IP, and update the domain if you did not use &lt;code&gt;local-sno.example.com&lt;/code&gt;:
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;span class="lnt"&gt;2
+&lt;/span&gt;&lt;span class="lnt"&gt;3
+&lt;/span&gt;&lt;span class="lnt"&gt;4
+&lt;/span&gt;&lt;span class="lnt"&gt;5
+&lt;/span&gt;&lt;span class="lnt"&gt;6
+&lt;/span&gt;&lt;span class="lnt"&gt;7
+&lt;/span&gt;&lt;span class="lnt"&gt;8
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-text" data-lang="text"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;# OpenShift SNO Local Lab
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;192.168.122.50 api.local-sno.example.com
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;192.168.122.50 api-int.local-sno.example.com
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;192.168.122.50 oauth-openshift.apps.local-sno.example.com
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;192.168.122.50 console-openshift-console.apps.local-sno.example.com
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;# Catch-all for other apps (Note: /etc/hosts does not support true wildcards,
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;# so you must add specific app routes here as you deploy them)
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;Save and exit.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;You can now open a web browser on your Fedora host, navigate to &lt;code&gt;https://console-openshift-console.apps.local-sno.example.com&lt;/code&gt;, and log in using the &lt;code&gt;kubeadmin&lt;/code&gt; credentials provided by the Assisted Installer!&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="5-debug-guide"&gt;5. Debug Guide:
+&lt;/h2&gt;&lt;p&gt;If you ever lose web console access or things go wrong with the node, you can use the CLI to break directly into the CoreOS host file system.&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;Assuming you configured your &lt;code&gt;KUBECONFIG&lt;/code&gt; or logged in via &lt;code&gt;oc login&lt;/code&gt;, spawn a privileged debug pod on the node:
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;oc debug node/local-sno
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;Change your root directory to the actual host filesystem:
+&lt;div class="highlight"&gt;&lt;div class="chroma"&gt;
+&lt;table class="lntable"&gt;&lt;tr&gt;&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code&gt;&lt;span class="lnt"&gt;1
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;
+&lt;td class="lntd"&gt;
+&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;chroot /host
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/div&gt;
+&lt;/div&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;From here, you are running as &lt;code&gt;root&lt;/code&gt; on the actual virtual machine. You can inspect kernel logs (&lt;code&gt;dmesg&lt;/code&gt;), check loaded network modules, manage &lt;code&gt;systemd&lt;/code&gt; services, and interact directly with the underlying &lt;code&gt;crio&lt;/code&gt; container runtime.&lt;/p&gt;</description></item></channel></rss>
